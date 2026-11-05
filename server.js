@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 
-// Serve static assets and explicitly point to the current folder
+// Serve static assets
 app.use(express.static(__dirname));
 
 // Explicit route for the root URL
@@ -28,7 +28,16 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ reply: 'Please provide a message.' });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // Initialize Gemini 3.8 Flash with your AI Studio configurations
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.8-flash",
+      tools: [{ googleSearch: {} }],
+      generationConfig: {
+        maxOutputTokens: 8192,
+        // thinkingLevel configuration matches your studio settings
+        thinkingConfig: { thinkingLevel: "medium" }
+      }
+    });
 
     const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
     Help them understand their Looker Studio dashboard performance metrics, sales trends, and key performance indicators clearly and concisely.`;
