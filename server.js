@@ -9,8 +9,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 
-// Serve static frontend files
-app.use(express.static(__dirname));
+// 1. Explicitly serve index.html on the root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY');
@@ -18,7 +20,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, user } = req.body;
-
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
