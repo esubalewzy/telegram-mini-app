@@ -1,0 +1,38 @@
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+app.use(express.json());
+
+// Serve static frontend files
+app.use(express.static(__dirname));
+
+// Initialize Gemini API
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY');
+
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, user } = req.body;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
+    Help them understand their Looker Studio dashboard performance metrics, sales trends, and key performance indicators clearly and concisely.`;
+
+    const result = await model.generateContent(`${systemPrompt}\nUser Question: ${message}`);
+    const responseText = result.response.text();
+
+    res.json({ reply: responseText });
+  } catch (error) {
+    console.error('AI Error:', error);
+    res.status(500).json({ reply: 'Sorry, I encountered an issue retrieving an answer.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
