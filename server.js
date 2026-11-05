@@ -23,6 +23,11 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, user } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ reply: 'Please provide a message.' });
+    }
+
     const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
 
     const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
@@ -33,7 +38,7 @@ app.post('/api/chat', async (req, res) => {
 
     res.json({ reply: responseText });
   } catch (error) {
-    console.error('AI Error:', error);
+    console.error('AI Error Details:', error);
     res.status(500).json({ reply: 'Sorry, I encountered an issue retrieving an answer.' });
   }
 });
