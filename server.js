@@ -30,7 +30,7 @@ app.post('/api/chat', async (req, res) => {
 
     // Initialize Gemini 3.8 Flash with your AI Studio configurations
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.8-flash",
       tools: [{ googleSearch: {} }],
       generationConfig: {
         maxOutputTokens: 8192,
