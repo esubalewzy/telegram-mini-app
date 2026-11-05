@@ -28,7 +28,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ reply: 'Please provide a message.' });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
     Help them understand their Looker Studio dashboard performance metrics, sales trends, and key performance indicators clearly and concisely.`;
