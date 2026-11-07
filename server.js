@@ -19,34 +19,56 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
 
+// Robust CSV Line Splitter handling quotes and commas
+function parseCSVLine(text) {
+  let result = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < text.length; i++) {
+    let char = text[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim().replace(/^"(.*)"$/, '$1'));
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim().replace(/^"(.*)"$/, '$1'));
+  return result;
+}
+
 async function fetchFinalSheetData() {
   try {
     const response = await fetch(FINAL_SHEET_CSV_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch sheet: ${response.statusText}`);
+    }
     const csvText = await response.text();
     
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
     if (lines.length === 0) return [];
 
-    const headers = lines[0].split(',').map(h => h.replace(/^"(.*)"$/, '$1').trim());
+    const headers = parseCSVLine(lines[0]);
 
     const rows = lines.slice(1).map(line => {
-      const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
+      const values = parseCSVLine(line);
       let obj = {};
       headers.forEach((h, index) => {
-        let val = values[index] ? values[index].replace(/^"(.*)"$/, '$1').trim() : '';
-        obj[h] = val;
+        obj[h] = values[index] !== undefined ? values[index] : '';
       });
       return obj;
     });
 
     return rows;
   } catch (err) {
-    console.error('Error fetching Google Sheet:', err);
-    return [];
+    console.error('Detailed Sheet Fetch Error:', err);
+    throw err;
   }
 }
 
-// Endpoint to dynamically provide available filter options to the frontend
 app.get('/api/filters', async (req, res) => {
   try {
     const rawData = await fetchFinalSheetData();
@@ -54,6 +76,7 @@ app.get('/api/filters', async (req, res) => {
     const weeks = [...new Set(rawData.map(r => r.Week).filter(Boolean))];
     res.json({ zones, weeks });
   } catch (err) {
+    console.error('Filters Route Error:', err);
     res.status(500).json({ zones: [], weeks: [] });
   }
 });
@@ -63,6 +86,9 @@ app.post('/api/chat', async (req, res) => {
     const { message, selectedZone, selectedWeek, user } = req.body;
 
     const rawData = await fetchFinalSheetData();
+    if (rawData.length === 0) {
+      return res.status(500).json({ reply: 'Could not retrieve data from the Google Sheet. Please check sharing permissions.' });
+    }
 
     let filteredData = rawData;
     if (selectedZone && selectedZone !== 'Grand Total') {
@@ -73,7 +99,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const nonReportingWoredas = filteredData
-      .filter(r => r.Report !== 'Reported' || !r.Report)
+      .filter(r => r.Report && r.Report.toLowerCase() !== 'reported')
       .map(r => r.Woreda)
       .filter(Boolean);
 
@@ -87,12 +113,12 @@ Filtered Row Count: ${filteredData.length}
 Non-Reporting / No-Response Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'All woredas reported'}
 
 Dataset Sample Context:
-${JSON.stringify(filteredData.slice(0, 30), null, 2)}
+${JSON.stringify(filteredData.slice(0, 25), null, 2)}
 
 Instructions for AI Analysis:
-1. **Indicator Coverage Summary**: Calculate coverage percentages (Performed / Eligible * 100) for key indicators based on the matching columns in the dataset.
-2. **Missing/No-Response Woredas**: Explicitly list woredas that haven't reported.
-3. Keep the output clean, structured, professional, and clear.`;
+1. **Indicator Coverage Summary**: Calculate coverage percentages (Performed / Eligible * 100) for key indicators based on matching columns in the dataset.
+2. **Missing/No-Response Woredas**: Explicitly list woredas that haven't reported or have zero responses for the week.
+3. Keep the output clean, structured, professional, and clear with bullet points and percentages.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
@@ -109,7 +135,7 @@ Instructions for AI Analysis:
 
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
-    res.status(500).json({ reply: 'Sorry, I encountered an issue analyzing the sheet data.' });
+    res.status(500).json({ reply: 'Sorry, I encountered an issue analyzing the sheet data. Check Render logs for details.' });
   }
 });
 
