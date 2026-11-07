@@ -7,7 +7,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "groq-sdk": "^0.3.0"
   }
 }
