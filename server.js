@@ -86,7 +86,6 @@ app.post('/api/chat', async (req, res) => {
       return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
     }
 
-    // 1. Filter rows by selected Zone & Week
     let filteredData = rawData;
     if (selectedZone && selectedZone !== 'Grand Total') {
       filteredData = filteredData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase());
@@ -95,16 +94,14 @@ app.post('/api/chat', async (req, res) => {
       filteredData = filteredData.filter(r => r.Week && r.Week.toLowerCase().includes(selectedWeek.toLowerCase()));
     }
 
-    // 2. Reporting Rate Breakdown based on 'Report' column
     const totalExpectedWoredas = filteredData.length;
     const reportingWoredas = filteredData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
     const nonReportingRows = filteredData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported');
     const nonReportingWoredas = nonReportingRows.map(r => r.Woreda).filter(Boolean);
     const reportingRate = totalExpectedWoredas > 0 ? ((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1) + '%' : '0%';
 
-    // 3. Pre-aggregate performed vs eligible with Full Indicator Names/Headers
     const headers = Object.keys(rawData[0] || {});
-    const indicatorSummary = {};
+    let indicators = [];
 
     headers.forEach(header => {
       if (header.includes('Eligible')) {
@@ -116,29 +113,30 @@ app.post('/api/chat', async (req, res) => {
           let totalEligible = 0;
 
           filteredData.forEach(row => {
-            const perfVal = parseFloat(row[performedKey]) || 0;
-            const eligVal = parseFloat(row[header]) || 0;
-            totalPerformed += perfVal;
-            totalEligible += eligVal;
+            totalPerformed += parseFloat(row[performedKey]) || 0;
+            totalEligible += parseFloat(row[header]) || 0;
           });
 
-          const coverage = totalEligible > 0 ? ((totalPerformed / totalEligible) * 100).toFixed(1) + '%' : 'N/A';
-          indicatorSummary[performedKey] = {
-            fullName: performedKey,
+          const coverageNum = totalEligible > 0 ? (totalPerformed / totalEligible) * 100 : 0;
+          indicators.push({
+            name: performedKey,
             performed: totalPerformed,
             eligible: totalEligible,
-            coverage: coverage
-          };
+            coverage: coverageNum.toFixed(1) + '%'
+          });
         }
       }
     });
 
-    // 4. Data Quality Audit (Performed > Eligible with indicator full names)
+    // Sort indicators to find best and worst
+    indicators.sort((a, b) => parseFloat(b.coverage) - parseFloat(a.coverage));
+    const topPerformers = indicators.slice(0, 3);
+    const lowPerformers = indicators.slice(-3);
+
+    // Collect data quality issues (limit to first 10 to conserve tokens)
     const qualityIssues = [];
     filteredData.forEach(row => {
-      const woredaName = row['Woreda'] || 'Unknown Woreda';
-      const zoneName = row['Zone'] || 'Unknown Zone';
-
+      const woredaName = row['Woreda'] || 'Unknown';
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -147,57 +145,29 @@ app.post('/api/chat', async (req, res) => {
           if (performedKey) {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
-
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal) {
-              qualityIssues.push({
-                woreda: woredaName,
-                zone: zoneName,
-                indicator: performedKey,
-                performed: perfVal,
-                eligible: eligVal,
-                discrepancy: `Reported performed value (${perfVal}) exceeds eligible pool (${eligVal})`
-              });
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 10) {
+              qualityIssues.push(`${woredaName} on [${performedKey}]: Performed (${perfVal}) > Eligible (${eligVal})`);
             }
           }
         }
       });
     });
 
-    // Structured Prompt enforcing exact sequence
-    const systemPrompt = `You are an expert Health & RMNCH Analytics and Data Quality Auditor. Analyze the provided structured data from the SWERHB report.
+    const systemPrompt = `You are an expert RMNCH Health Analytics and Data Quality Auditor. Provide a concise report following this strict structure:
 
-Scope Filters:
-- Zone: ${selectedZone || 'Grand Total'}
-- Week: ${selectedWeek || 'All Weeks'}
-
-Reporting Rate Statistics:
-- Total Expected Woredas / Submissions: ${totalExpectedWoredas}
-- Submitted / Reported Count: ${reportingWoredas.length}
-- Reporting Rate: ${reportingRate}
-- Non-Reporting / Missing Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'None (100% reporting)'}
-
-Indicator Summaries (Performed, Eligible, Coverage %):
-${JSON.stringify(indicatorSummary, null, 2)}
-
-Data Quality Anomalies (Performed > Eligible):
-${JSON.stringify(qualityIssues, null, 2)}
-
-**Strict Output Generation Order & Instructions:**
-1. **Reporting Rate Analysis**: Start by evaluating the reporting rate. State the submission numbers, the exact reporting percentage, and explicitly list the non-reporting woredas.
-2. **Good Performance Side**: Detail the indicators showing strong performance and high coverage percentages. Include the full indicator names (e.g., family planning, antenatal care, vaccinations) along with their numbers.
-3. **Poor Performance Side**: Highlight lagging indicators, low coverage rates, or areas needing immediate intervention. Include full indicator names.
-4. **Data Quality Issues**: Point out specific data quality discrepancies found in reported woredas where performed numbers exceed eligible pools. You MUST include the exact **Woreda name** and the **full indicator name** for every issue detected.
-
-Keep the output professional, cleanly structured with bold headings, and formatted with bullet points.`;
+1. **Reporting Rate Analysis**: Total expected: ${totalExpectedWoredas}, Reported: ${reportingWoredas.length}, Rate: ${reportingRate}. Missing woredas: ${nonReportingWoredas.join(', ') || 'None'}.
+2. **Good Performance Side**: Top indicators with strong coverage: ${JSON.stringify(topPerformers)}
+3. **Poor Performance Side**: Lagging indicators with low coverage: ${JSON.stringify(lowPerformers)}
+4. **Data Quality Issues**: Discrepancies where performed > eligible: ${qualityIssues.length > 0 ? qualityIssues.join('; ') : 'No data quality anomalies detected.'}`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Analyze reporting rate, performance highlights, and data quality issues for ${selectedZone || 'Grand Total'}.` }
+        { role: "user", content: message || `Analyze zone ${selectedZone} and week ${selectedWeek}.` }
       ],
       model: "openai/gpt-oss-20b",
-      temperature: 0.4,
-      max_completion_tokens: 1500,
+      temperature: 0.3,
+      max_completion_tokens: 800,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
