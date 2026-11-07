@@ -136,14 +136,13 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Anomaly Audit: HepBD Gap + Performed > Eligible + Mortality
+    // Audits: HepBD Gap + Consistency + Mortality
     const qualityIssues = [];
     const hepBDMissedWoredas = [];
 
     filteredData.forEach(row => {
       const woredaName = row['Woreda'] || 'Unknown Woreda';
 
-      // HepBD Gap Check: Skilled Delivery (2.7) vs Hepatitis BD (3.3)
       const skilledKey = headers.find(h => h.includes('2.7') && !h.includes('Eligible') && !h.includes('Target'));
       const hepBDKey = headers.find(h => h.includes('3.3') && !h.includes('Eligible') && !h.includes('Target'));
 
@@ -152,11 +151,10 @@ app.post('/api/chat', async (req, res) => {
         const hepBDVal = parseFloat(row[hepBDKey]) || 0;
         if (skilledVal > hepBDVal) {
           const missed = skilledVal - hepBDVal;
-          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births but only ${hepBDVal} Hepatitis BD doses (${missed} babies missed birth dose)`);
+          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
         }
       }
 
-      // Performed > Eligible Check
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -165,28 +163,25 @@ app.post('/api/chat', async (req, res) => {
           if (performedKey) {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 10) {
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 8) {
               qualityIssues.push(`[Consistency Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) > Eligible (${eligVal}).`);
             }
           }
         }
       });
 
-      // Mortality Check
       headers.forEach(h => {
         if ((h.includes('2.8') || h.toLowerCase().includes('maternal death') || h.includes('4.4') || h.toLowerCase().includes('neonatal')) && !h.includes('Eligible') && !h.includes('Target')) {
           const deathVal = parseFloat(row[h]) || 0;
           if (deathVal > 0) {
-            qualityIssues.push(`[Mortality Alert] ${woredaName} reported: ${h} = ${deathVal}`);
+            qualityIssues.push(`[Mortality Alert] ${woredaName}: ${h} = ${deathVal}`);
           }
         }
       });
     });
 
-    // Comparative Analysis Data Pre-computation
     let comparisonContext = '';
     if (!selectedZone || selectedZone === 'Grand Total') {
-      // Zone vs Zone breakdown
       let zoneStats = {};
       rawData.forEach(r => {
         const z = r.Zone || 'Unknown Zone';
@@ -194,17 +189,13 @@ app.post('/api/chat', async (req, res) => {
         zoneStats[z].expected++;
         if (r.Report && r.Report.toLowerCase() === 'reported') zoneStats[z].reported++;
       });
-      comparisonContext = `Comparative Analysis (Zone vs Zone Performance):\n${JSON.stringify(zoneStats, null, 2)}`;
+      comparisonContext = `Zone vs Zone Comparison: ${JSON.stringify(zoneStats)}`;
     } else {
-      // Woreda vs Woreda breakdown inside selected zone
-      let woredaStats = filteredData.map(r => ({
-        woreda: r.Woreda,
-        reported: r.Report === 'Reported' ? 'Yes' : 'No'
-      }));
-      comparisonContext = `Comparative Analysis (Woreda vs Woreda Performance in ${selectedZone}):\n${JSON.stringify(woredaStats, null, 2)}`;
+      let woredaStats = filteredData.map(r => ({ woreda: r.Woreda, status: r.Report || 'Not Reported' }));
+      comparisonContext = `Woreda Performance in ${selectedZone}: ${JSON.stringify(woredaStats)}`;
     }
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report adhering strictly to this sequence:
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report covering ALL sections without truncating.
 
 Greeting Header: "Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
 
@@ -212,31 +203,33 @@ Data Context:
 - Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
 - Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Hepatitis BD Audit (Missed Birth Doses): ${hepBDMissedWoredas.length > 0 ? hepBDMissedWoredas.join(' | ') : 'None (All skilled birth babies vaccinated)'}
-- Inconsistency Anomalies & Mortalities: ${qualityIssues.length > 0 ? qualityIssues.join(' | ') : 'None'}
+- Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
+- Quality Anomalies & Mortalities: ${qualityIssues.join(' | ') || 'None'}
 - ${comparisonContext}
 
+Formatting Instructions:
+- For Categories 1 to 5, you MUST present the indicators using Markdown tables with columns: | Indicator | Performed | Eligible | Coverage % |
+- Keep table rows compact and concise so the full report fits within the output token limit and renders all 5 categories.
+
 Required Report Structure:
-1. **Reporting Rate Summary**: State submission rates and list non-reporting woredas.
-2. **Category 1: SRH Services**: List all indicators with performed, eligible, coverage %.
-3. **Category 2: Maternal Services**: List all indicators with performed, eligible, coverage %.
-4. **Category 3: EPI Services**: List all indicators with performed, eligible, coverage %.
-5. **Category 4: Child Health Service**: List all indicators with performed, eligible, coverage %.
-6. **Category 5: Nutrition**: List all indicators with performed, eligible, coverage %.
-7. **Hepatitis BD Birth Dose Missed Woredas Audit**: Explicitly list all Woredas failing to vaccinate all skilled birth attendant babies with HepBD.
-8. **Comparative Analysis & Benchmark**:
-   - If Grand Total was selected: Compare Zone vs. Zone performance and rank them.
-   - If a specific Zone was selected: Compare Woreda vs. Woreda performance, highlighting top and poor performer woredas.
-9. **Data Quality, Anomalies & Mortalities**: Highlight consistency errors (performed > eligible) and reported maternal/neonatal deaths.`;
+1. **Reporting Rate Summary**
+2. **Category 1: SRH Services** (Table format)
+3. **Category 2: Maternal Services** (Table format)
+4. **Category 3: EPI Services** (Table format)
+5. **Category 4: Child Health Service** (Table format)
+6. **Category 5: Nutrition** (Table format)
+7. **Hepatitis BD Birth Dose Missed Woredas Audit**
+8. **Comparative Benchmarking** (Zone vs Zone or Woreda vs Woreda)
+9. **Data Quality, Anomalies & Mortalities**`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full report for ${selectedZone || 'Grand Total'}.` }
+        { role: "user", content: message || `Generate full table-based report for ${selectedZone || 'Grand Total'}.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.3,
-      max_completion_tokens: 1500,
+      max_completion_tokens: 2000,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
@@ -248,7 +241,6 @@ Required Report Structure:
   }
 });
 
-// Endpoint to generate downloadable Word Document (.docx)
 app.post('/api/export-docx', async (req, res) => {
   try {
     const { reportText, title } = req.body;
