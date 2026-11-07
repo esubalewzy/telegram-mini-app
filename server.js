@@ -148,8 +148,9 @@ app.post('/api/chat', async (req, res) => {
             totalEligible += parseFloat(row[header]) || 0;
           });
 
-          const coverage = totalEligible > 0 ? ((totalPerformed / totalEligible) * 100).toFixed(1) + '%' : 'N/A';
-          const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage };
+          const coverageNum = totalEligible > 0 ? parseFloat(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
+          const coverage = coverageNum + '%';
+          const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage: coverageNum };
 
           if (baseName.startsWith('1.')) categorizedIndicators.cat1_srh.push(indicatorEntry);
           else if (baseName.startsWith('2.')) categorizedIndicators.cat2_maternal.push(indicatorEntry);
@@ -159,6 +160,15 @@ app.post('/api/chat', async (req, res) => {
         }
       }
     });
+
+    // HSTP-II National Benchmark Targets mapping
+    const hstp2Benchmarks = {
+      "Category 1: SRH Services": { target: 75, desc: "Contraceptive Acceptance Rate / Family Planning Target (~75%)" },
+      "Category 2: Maternal Services": { target: 81, desc: "ANC4 Coverage (~81%) & Skilled Delivery (~80%)" },
+      "Category 3: EPI Services": { target: 90, desc: "Pentavalent-3 / Fully Immunized Target (~90%)" },
+      "Category 4: Child Health Service": { target: 85, desc: "Pneumonia/Diarrhea Treatment & Care Seeking (~85%)" },
+      "Category 5: Nutrition": { target: 80, desc: "SAM Screening and Growth Monitoring (~80%)" }
+    };
 
     const qualityIssues = [];
     const hepBDMissedWoredas = [];
@@ -214,21 +224,6 @@ app.post('/api/chat', async (req, res) => {
       });
     });
 
-    let comparisonContext = '';
-    if (!selectedZone || selectedZone === 'Grand Total') {
-      let zoneStats = {};
-      rawData.forEach(r => {
-        const z = r.Zone || 'Unknown Zone';
-        if (!zoneStats[z]) zoneStats[z] = { total: 0, reported: 0 };
-        zoneStats[z].total++;
-        if (r.Report && r.Report.toLowerCase() === 'reported') zoneStats[z].reported++;
-      });
-      comparisonContext = `Zone vs Zone Comparison against Ethiopian HSTP-II targets: ${JSON.stringify(zoneStats)}`;
-    } else {
-      let woredaStats = filteredData.map(r => ({ woreda: r.Woreda, status: r.Report || 'Not Reported' }));
-      comparisonContext = `Woreda Performance in ${selectedZone} against Ethiopian HSTP-II targets: ${JSON.stringify(woredaStats)}`;
-    }
-
     const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report.
 
 Greeting Header (Must start with):
@@ -239,28 +234,28 @@ Data Context:
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
 - Multi-Week Trend Data: ${weeklyTrendSummary}
 - Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Ethiopian HSTP-II Strategic Benchmarks: ${JSON.stringify(hstp2Benchmarks)}
 - Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
 - Quality Issues: ${qualityIssues.join(' | ') || 'None'}
 - Mortality Alerts: ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
-- ${comparisonContext}
 
 Required Report Structure:
 1. **Reporting Rate Summary**
 2. **Multi-Week Reporting Trend Analysis**
-3. **Category 1: SRH Services** (Markdown Table format: | Indicator | Performed | Eligible | Coverage % |)
-4. **Category 2: Maternal Services** (Markdown Table format)
-5. **Category 3: EPI Services** (Markdown Table format)
-6. **Category 4: Child Health Service** (Markdown Table format)
-7. **Category 5: Nutrition** (Markdown Table format)
+3. **Category 1: SRH Services** (Markdown Table format: | Indicator | Performed | Eligible | Coverage % | vs HSTP-II Target |)
+4. **Category 2: Maternal Services** (Markdown Table format with vs HSTP-II Target)
+5. **Category 3: EPI Services** (Markdown Table format with vs HSTP-II Target)
+6. **Category 4: Child Health Service** (Markdown Table format with vs HSTP-II Target)
+7. **Category 5: Nutrition** (Markdown Table format with vs HSTP-II Target)
 8. **Hepatitis BD Birth Dose Missed Woredas Audit**
-9. **Comparative Benchmarking vs. Ethiopian HSTP-II Guidelines**
+9. **Comprehensive HSTP-II Benchmarking Evaluation**: Explicitly compare the category coverages against the national Ethiopian HSTP-II targets (SRH 75%, Maternal 81%, EPI 90%, Child Health 85%, Nutrition 80%), highlighting gaps, underperforming domains, and successes across all selected categories.
 10. **Data Quality & Consistency Audit**
 11. **Mortality Alerts** (Strictly Maternal and Neonatal only)`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full report.` }
+        { role: "user", content: message || `Generate full report with category-by-category HSTP-II benchmarking.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.3,
@@ -315,10 +310,10 @@ app.post('/api/export-docx', async (req, res) => {
                       text: cellText, 
                       bold: isHeader,
                       color: isHeader ? "FFFFFF" : "000000",
-                      size: 20 
+                      size: 18 
                     })]
                   })],
-                  width: { size: 2000, type: WidthType.DXA },
+                  width: { size: 1800, type: WidthType.DXA },
                   shading: isHeader 
                     ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } 
                     : (rowIndex % 2 === 0 ? { fill: "F2F4F8", val: ShadingType.CLEAR, color: "auto" } : { fill: "FFFFFF", val: ShadingType.CLEAR, color: "auto" })
