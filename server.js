@@ -400,17 +400,17 @@ cron.schedule('30 13 * * 1,2,3', async () => {
 
     // Zonal Coordinator and Regional leadership email directories
     const zonalEmails = {
-      "Kaffa": "kaffa.coordinator@swerhb.gov.et",
-      "Dawro": "dawro.coordinator@swerhb.gov.et",
-      "West Omo": "westomo.coordinator@swerhb.gov.et",
-      "Bench Sheko": "benchsheko.coordinator@swerhb.gov.et",
-      "Sheka": "sheka.coordinator@swerhb.gov.et",
-      "Konta": "konta.coordinator@swerhb.gov.et"
+      //"Kaffa": "kaffa.coordinator@swerhb.gov.et",
+      //"Dawro": "dawro.coordinator@swerhb.gov.et",
+      //"West Omo": "westomo.coordinator@swerhb.gov.et",
+      //"Bench Sheko": "benchsheko.coordinator@swerhb.gov.et",
+      //"Sheka": "sheka.coordinator@swerhb.gov.et",
+      //"Konta": "konta.coordinator@swerhb.gov.et"
     };
 
     const regionalEmails = [
       "esubalewzerihun11@gmail.com",
-      "regional.coordinator@swerhb.gov.et"
+      //"regional.coordinator@swerhb.gov.et"
     ];
 
     // 1. Send Individualized Zonal Reports for Week `currentWeek`
