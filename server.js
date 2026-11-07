@@ -2,7 +2,10 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { 
+  Document, Packer, Paragraph, TextRun, HeadingLevel, 
+  Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ShadingType 
+} from 'docx';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +83,7 @@ app.get('/api/filters', async (req, res) => {
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, selectedZone, selectedWeek, user } = req.body;
+    const { message, selectedZone, selectedWeek } = req.body;
 
     const rawData = await fetchFinalSheetData();
     if (rawData.length === 0) {
@@ -136,7 +139,6 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Audits: HepBD Gap + Consistency + Mortality
     const qualityIssues = [];
     const hepBDMissedWoredas = [];
 
@@ -195,7 +197,7 @@ app.post('/api/chat', async (req, res) => {
       comparisonContext = `Woreda Performance in ${selectedZone}: ${JSON.stringify(woredaStats)}`;
     }
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report covering ALL sections without truncating.
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report covering ALL sections.
 
 Greeting Header: "Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
 
@@ -208,8 +210,7 @@ Data Context:
 - ${comparisonContext}
 
 Formatting Instructions:
-- For Categories 1 to 5, you MUST present the indicators using Markdown tables with columns: | Indicator | Performed | Eligible | Coverage % |
-- Keep table rows compact and concise so the full report fits within the output token limit and renders all 5 categories.
+- For Categories 1 to 5, you MUST present the indicators using clean Markdown tables with columns: | Indicator | Performed | Eligible | Coverage % |
 
 Required Report Structure:
 1. **Reporting Rate Summary**
@@ -219,7 +220,7 @@ Required Report Structure:
 5. **Category 4: Child Health Service** (Table format)
 6. **Category 5: Nutrition** (Table format)
 7. **Hepatitis BD Birth Dose Missed Woredas Audit**
-8. **Comparative Benchmarking** (Zone vs Zone or Woreda vs Woreda)
+8. **Comparative Benchmarking**
 9. **Data Quality, Anomalies & Mortalities**`;
 
     const chatCompletion = await groq.chat.completions.create({
@@ -241,23 +242,82 @@ Required Report Structure:
   }
 });
 
+// Helper to convert markdown tables into native Word docx tables
 app.post('/api/export-docx', async (req, res) => {
   try {
     const { reportText, title } = req.body;
+    const lines = reportText.split('\n');
+    const docChildren = [
+      new Paragraph({
+        text: title || "SWERHB RMNCH Analytics Report",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 200 }
+      })
+    ];
+
+    let i = 0;
+    while (i < lines.length) {
+      let line = lines[i].trim();
+
+      // Check if line starts a markdown table
+      if (line.startsWith('|') && line.endsWith('|')) {
+        let tableRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          let rowLine = lines[i].trim();
+          // Skip markdown separator line like |---|---|
+          if (!rowLine.includes('---')) {
+            let cells = rowLine.split('|').filter(c => c !== '').map(c => c.trim());
+            tableRows.push(cells);
+          }
+          i++;
+        }
+
+        if (tableRows.length > 0) {
+          const docTableRows = tableRows.map((rowCells, rowIndex) => {
+            return new TableRow({
+              children: rowCells.map(cellText => {
+                return new TableCell({
+                  children: [new Paragraph({
+                    children: [new TextRun({ 
+                      text: cellText, 
+                      bold: rowIndex === 0,
+                      size: 20 
+                    })]
+                  })],
+                  width: { size: 2000, type: WidthType.DXA },
+                  shading: rowIndex === 0 ? { fill: "2481CC" } : undefined
+                });
+              })
+            });
+          });
+
+          docChildren.push(new Table({
+            rows: docTableRows,
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
+            }
+          }));
+          docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
+        }
+      } else {
+        if (line !== '') {
+          docChildren.push(new Paragraph({
+            children: [new TextRun({ text: lines[i], size: 22 })],
+            spacing: { after: 100 }
+          }));
+        }
+        i++;
+      }
+    }
 
     const doc = new Document({
-      sections: [{
-        properties: {},
-        children: [
-          new Paragraph({
-            text: title || "SWERHB RMNCH Analytics Report",
-            heading: HeadingLevel.HEADING_1,
-          }),
-          ...reportText.split('\n').map(line => new Paragraph({
-            children: [new TextRun(line)]
-          }))
-        ],
-      }],
+      sections: [{ properties: {}, children: docChildren }],
     });
 
     const buffer = await Packer.toBuffer(doc);
