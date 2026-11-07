@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,8 +17,8 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Initialize Gemini API securely using Render Environment Variables
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Groq client securely using Render Environment Variables
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 app.post('/api/chat', async (req, res) => {
   try {
@@ -28,27 +28,38 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ reply: 'Please provide a message.' });
     }
 
-    // Initialize Gemini 3.8 Flash with your AI Studio configurations
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3.8-flash",
-      tools: [{ googleSearch: {} }],
-      generationConfig: {
-        maxOutputTokens: 8192,
-        // thinkingLevel configuration matches your studio settings
-        thinkingConfig: { thinkingLevel: "medium" }
-      }
+    // Live or baseline zone dataset for detailed performance breakdown
+    const liveZoneData = [
+      { zone: "North", sales: 54000, target: 50000, status: "Exceeding" },
+      { zone: "South", sales: 31000, target: 40000, status: "Underperforming" },
+      { zone: "East", sales: 42000, target: 40000, status: "On Track" },
+      { zone: "West", sales: 38000, target: 45000, status: "Needs Attention" }
+    ];
+
+    const systemPrompt = `You are an expert business analytics assistant for ${user?.first_name || 'the user'}. 
+    Here is the live dataset by zone:
+    ${JSON.stringify(liveZoneData, null, 2)}
+    
+    Provide a detailed, professional zone-by-zone analysis and feedback report based strictly on this data. 
+    Highlight strengths, weaknesses, and actionable recommendations for each zone clearly and concisely.`;
+
+    // Call Groq's high-speed inference model
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.7,
+      max_tokens: 1024,
     });
 
-    const systemPrompt = `You are a helpful business analytics assistant for ${user?.first_name || 'the user'}. 
-    Help them understand their Looker Studio dashboard performance metrics, sales trends, and key performance indicators clearly and concisely.`;
-
-    const result = await model.generateContent(`${systemPrompt}\nUser Question: ${message}`);
-    const responseText = result.response.text();
-
+    const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
     res.json({ reply: responseText });
+
   } catch (error) {
-    console.error('AI Error Details:', error);
-    res.status(500).json({ reply: 'Sorry, I encountered an issue retrieving an answer.' });
+    console.error('Groq AI Error Details:', error);
+    res.status(500).json({ reply: 'Sorry, I encountered an issue generating the report from Groq AI.' });
   }
 });
 
