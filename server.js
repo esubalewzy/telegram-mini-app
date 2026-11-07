@@ -19,7 +19,6 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
 
-// Robust CSV Line Splitter handling quotes and commas
 function parseCSVLine(text) {
   let result = [];
   let current = '';
@@ -43,9 +42,7 @@ function parseCSVLine(text) {
 async function fetchFinalSheetData() {
   try {
     const response = await fetch(FINAL_SHEET_CSV_URL);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch sheet: ${response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
     const csvText = await response.text();
     
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
@@ -64,7 +61,7 @@ async function fetchFinalSheetData() {
 
     return rows;
   } catch (err) {
-    console.error('Detailed Sheet Fetch Error:', err);
+    console.error('Sheet Fetch Error:', err);
     throw err;
   }
 }
@@ -76,7 +73,6 @@ app.get('/api/filters', async (req, res) => {
     const weeks = [...new Set(rawData.map(r => r.Week).filter(Boolean))];
     res.json({ zones, weeks });
   } catch (err) {
-    console.error('Filters Route Error:', err);
     res.status(500).json({ zones: [], weeks: [] });
   }
 });
@@ -87,9 +83,10 @@ app.post('/api/chat', async (req, res) => {
 
     const rawData = await fetchFinalSheetData();
     if (rawData.length === 0) {
-      return res.status(500).json({ reply: 'Could not retrieve data from the Google Sheet. Please check sharing permissions.' });
+      return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
     }
 
+    // 1. Filter rows by selected Zone & Week
     let filteredData = rawData;
     if (selectedZone && selectedZone !== 'Grand Total') {
       filteredData = filteredData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase());
@@ -98,32 +95,63 @@ app.post('/api/chat', async (req, res) => {
       filteredData = filteredData.filter(r => r.Week && r.Week.toLowerCase().includes(selectedWeek.toLowerCase()));
     }
 
+    // 2. Extract missing/non-reporting woredas
     const nonReportingWoredas = filteredData
       .filter(r => r.Report && r.Report.toLowerCase() !== 'reported')
       .map(r => r.Woreda)
       .filter(Boolean);
 
-    const systemPrompt = `You are an expert Health & RMNCH Business Analytics Assistant analyzing live data from the "Final" tab of the SWERHB spreadsheet.
+    // 3. Pre-aggregate performed vs. eligible numeric values in Node.js
+    const headers = Object.keys(rawData[0] || {});
+    const indicatorSummary = {};
 
-Selected Filter Scope:
-- Zone Selection: ${selectedZone || 'Grand Total (All Zones)'}
-- Week Selection: ${selectedWeek || 'All Weeks'}
+    headers.forEach(header => {
+      if (header.includes('Eligible')) {
+        const baseName = header.replace('Eligible', '').trim();
+        const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
+        
+        if (performedKey) {
+          let totalPerformed = 0;
+          let totalEligible = 0;
 
-Filtered Row Count: ${filteredData.length}
-Non-Reporting / No-Response Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'All woredas reported'}
+          filteredData.forEach(row => {
+            const perfVal = parseFloat(row[performedKey]) || 0;
+            const eligVal = parseFloat(row[header]) || 0;
+            totalPerformed += perfVal;
+            totalEligible += eligVal;
+          });
 
-Dataset Sample Context:
-${JSON.stringify(filteredData.slice(0, 25), null, 2)}
+          const coverage = totalEligible > 0 ? ((totalPerformed / totalEligible) * 100).toFixed(1) + '%' : 'N/A';
+          indicatorSummary[baseName] = {
+            performed: totalPerformed,
+            eligible: totalEligible,
+            coverage: coverage
+          };
+        }
+      }
+    });
 
-Instructions for AI Analysis:
-1. **Indicator Coverage Summary**: Calculate coverage percentages (Performed / Eligible * 100) for key indicators based on matching columns in the dataset.
-2. **Missing/No-Response Woredas**: Explicitly list woredas that haven't reported or have zero responses for the week.
-3. Keep the output clean, structured, professional, and clear with bullet points and percentages.`;
+    // Compact system prompt sent to Groq
+    const systemPrompt = `You are an expert Health & RMNCH Business Analytics Assistant analyzing live SWERHB reporting data.
+
+Scope Filters:
+- Zone: ${selectedZone || 'Grand Total'}
+- Week: ${selectedWeek || 'All Weeks'}
+- Total Reporting Woredas: ${filteredData.length}
+- Non-Reporting / Missing Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'None (All Reported)'}
+
+Pre-Aggregated Indicator Summary (Performed / Eligible = Coverage %):
+${JSON.stringify(indicatorSummary, null, 2)}
+
+Instructions:
+1. Provide a clean summary of indicator coverage (Performed vs Eligible and calculated Coverage %).
+2. Explicitly list any missing/non-reporting Woredas.
+3. Keep the output clean, professional, concise, and structured with bullet points.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full coverage summary and list missing woredas for ${selectedZone || 'Grand Total'}.` }
+        { role: "user", content: message || `Generate coverage summary and list missing woredas for ${selectedZone || 'Grand Total'}.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.5,
@@ -135,7 +163,7 @@ Instructions for AI Analysis:
 
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
-    res.status(500).json({ reply: 'Sorry, I encountered an issue analyzing the sheet data. Check Render logs for details.' });
+    res.status(500).json({ reply: 'Error generating report. Please try again.' });
   }
 });
 
