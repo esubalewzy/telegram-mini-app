@@ -101,7 +101,13 @@ app.post('/api/chat', async (req, res) => {
     const reportingRate = totalExpectedWoredas > 0 ? ((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1) + '%' : '0%';
 
     const headers = Object.keys(rawData[0] || {});
-    let indicators = [];
+    let categorizedIndicators = {
+      cat1_srh: [],
+      cat2_maternal: [],
+      cat3_epi: [],
+      cat4_child: [],
+      cat5_nutrition: []
+    };
 
     headers.forEach(header => {
       if (header.includes('Eligible')) {
@@ -117,26 +123,23 @@ app.post('/api/chat', async (req, res) => {
             totalEligible += parseFloat(row[header]) || 0;
           });
 
-          const coverageNum = totalEligible > 0 ? (totalPerformed / totalEligible) * 100 : 0;
-          indicators.push({
-            name: performedKey,
-            performed: totalPerformed,
-            eligible: totalEligible,
-            coverage: coverageNum.toFixed(1) + '%'
-          });
+          const coverage = totalEligible > 0 ? ((totalPerformed / totalEligible) * 100).toFixed(1) + '%' : 'N/A';
+          const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage };
+
+          if (baseName.startsWith('1.')) categorizedIndicators.cat1_srh.push(indicatorEntry);
+          else if (baseName.startsWith('2.')) categorizedIndicators.cat2_maternal.push(indicatorEntry);
+          else if (baseName.startsWith('3.')) categorizedIndicators.cat3_epi.push(indicatorEntry);
+          else if (baseName.startsWith('4.')) categorizedIndicators.cat4_child.push(indicatorEntry);
+          else if (baseName.startsWith('5.')) categorizedIndicators.cat5_nutrition.push(indicatorEntry);
         }
       }
     });
 
-    // Sort indicators to find best and worst
-    indicators.sort((a, b) => parseFloat(b.coverage) - parseFloat(a.coverage));
-    const topPerformers = indicators.slice(0, 3);
-    const lowPerformers = indicators.slice(-3);
-
-    // Collect data quality issues (limit to first 10 to conserve tokens)
+    // Anomaly detection: Performed > Eligible, Maternal/Neonatal deaths, and outliers
     const qualityIssues = [];
     filteredData.forEach(row => {
-      const woredaName = row['Woreda'] || 'Unknown';
+      const woredaName = row['Woreda'] || 'Unknown Woreda';
+
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -145,29 +148,52 @@ app.post('/api/chat', async (req, res) => {
           if (performedKey) {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 10) {
-              qualityIssues.push(`${woredaName} on [${performedKey}]: Performed (${perfVal}) > Eligible (${eligVal})`);
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 15) {
+              qualityIssues.push(`[Consistency Issue] ${woredaName} on indicator '${performedKey}': Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
             }
+          }
+        }
+      });
+
+      // Check Maternal Deaths (2.8) and Neonatal Deaths (4.4)
+      headers.forEach(h => {
+        if ((h.includes('2.8') || h.toLowerCase().includes('maternal death') || h.includes('4.4') || h.toLowerCase().includes('neonatal')) && !h.includes('Eligible') && !h.includes('Target')) {
+          const deathVal = parseFloat(row[h]) || 0;
+          if (deathVal > 0) {
+            qualityIssues.push(`[Vital Event Reported] ${woredaName} reported mortality on [${h}]: Count = ${deathVal}`);
           }
         }
       });
     });
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics and Data Quality Auditor. Provide a concise report following this strict structure:
+    const systemPrompt = `You are an expert RMNCH Health Analytics Assistant. You must output the analysis strictly adhering to the user's requested template and headings.
 
-1. **Reporting Rate Analysis**: Total expected: ${totalExpectedWoredas}, Reported: ${reportingWoredas.length}, Rate: ${reportingRate}. Missing woredas: ${nonReportingWoredas.join(', ') || 'None'}.
-2. **Good Performance Side**: Top indicators with strong coverage: ${JSON.stringify(topPerformers)}
-3. **Poor Performance Side**: Lagging indicators with low coverage: ${JSON.stringify(lowPerformers)}
-4. **Data Quality Issues**: Discrepancies where performed > eligible: ${qualityIssues.length > 0 ? qualityIssues.join('; ') : 'No data quality anomalies detected.'}`;
+Greeting to prepend at the very beginning of your response:
+"Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
+
+Data Context:
+- Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas} woredas reported)
+- Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
+- Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Data Quality / Anomalies / Mortalities: ${qualityIssues.length > 0 ? qualityIssues.join(' | ') : 'None detected'}
+
+Required Report Sections:
+1. **Non-Reporting Woredas**: List all non-reporting woredas.
+2. **Category 1: SRH Services**: List indicators, performed, eligible, and coverage %.
+3. **Category 2: Maternal Services**: List indicators, performed, eligible, and coverage %.
+4. **Category 3: EPI Services**: List indicators, performed, eligible, and coverage %.
+5. **Category 4: Child Health Service**: List indicators, performed, eligible, and coverage %.
+6. **Category 5: Nutrition**: List indicators, performed, eligible, and coverage %.
+7. **Data Quality, Anomalies & Mortalities**: Highlight consistency issues (performed > eligible), unusual spikes, and reported maternal or neonatal deaths with their respective woreda names.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Analyze zone ${selectedZone} and week ${selectedWeek}.` }
+        { role: "user", content: message || `Generate full classified report for zone ${selectedZone} and week ${selectedWeek}.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.3,
-      max_completion_tokens: 800,
+      max_completion_tokens: 1200,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
@@ -175,7 +201,7 @@ app.post('/api/chat', async (req, res) => {
 
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
-    res.status(500).json({ reply: 'Error generating structured report. Please try again.' });
+    res.status(500).json({ reply: 'Error generating report. Please try again.' });
   }
 });
 
