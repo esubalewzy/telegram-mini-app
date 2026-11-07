@@ -107,25 +107,14 @@
   <div class="container">
     <h2>SWERHB Analytics Dashboard</h2>
     
-    <!-- Filter Selectors -->
+    <!-- Dynamic Filter Selectors -->
     <div class="filter-bar">
       <select id="zoneSelect">
         <option value="Grand Total">Grand Total (All Zones)</option>
-        <option value="Kaffa Zone">Kaffa Zone</option>
-        <option value="Dawro Zone">Dawro Zone</option>
-        <option value="Sheka Zone">Sheka Zone</option>
-        <option value="Bench Sheko Zone">Bench Sheko Zone</option>
-        <option value="Konta Zone">Konta Zone</option>
-        <option value="West Omo Zone">West Omo Zone</option>
       </select>
 
       <select id="weekSelect">
         <option value="All Weeks">All Weeks</option>
-        <option value="Week 15">Week 15</option>
-        <option value="Week 14">Week 14</option>
-        <option value="Week 13">Week 13</option>
-        <option value="Week 12">Week 12</option>
-        <option value="Week 11">Week 11</option>
       </select>
     </div>
 
@@ -136,10 +125,10 @@
     <h3>RMNCH AI Assistant</h3>
     <div class="chat-container">
       <div class="chat-box" id="chatBox">
-        <div class="message bot-message">Select a Zone and Week above, then click Analyze to compute indicator coverage and detect missing woredas!</div>
+        <div class="message bot-message">Loading live zones and weeks from your sheet...</div>
       </div>
       <div class="input-area">
-        <input type="text" id="userInput" placeholder="Ask about specific coverage or missing woredas..." onkeydown="if(event.key==='Enter') sendMessage()" />
+        <input type="text" id="userInput" placeholder="Ask about coverage or missing woredas..." onkeydown="if(event.key==='Enter') sendMessage()" />
         <button id="sendBtn" onclick="sendMessage()">Analyze</button>
       </div>
     </div>
@@ -148,6 +137,39 @@
   <script>
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
+
+    // Fetch dynamic options on load
+    async function loadFilters() {
+      try {
+        const res = await fetch('/api/filters');
+        const data = await res.json();
+        
+        const zoneSelect = document.getElementById('zoneSelect');
+        const weekSelect = document.getElementById('weekSelect');
+
+        // Populate Zones
+        data.zones.forEach(zone => {
+          const opt = document.createElement('option');
+          opt.value = zone;
+          opt.textContent = zone;
+          zoneSelect.appendChild(opt);
+        });
+
+        // Populate Weeks
+        data.weeks.forEach(week => {
+          const opt = document.createElement('option');
+          opt.value = week;
+          opt.textContent = week;
+          weekSelect.appendChild(opt);
+        });
+
+        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Filters loaded from sheet! Select a Zone and Week above, then click Analyze.</div>';
+      } catch (err) {
+        console.error('Failed to load filters:', err);
+      }
+    }
+
+    loadFilters();
 
     async function sendMessage() {
       const inputEl = document.getElementById('userInput');
@@ -164,7 +186,7 @@
       inputEl.disabled = true;
       sendBtn.disabled = true;
 
-      const loadingDiv = appendMessage('Reading live sheet data & analyzing...', 'bot-message');
+      const loadingDiv = appendMessage('Reading live sheet data & calculating coverage...', 'bot-message');
 
       try {
         const user = tg?.initDataUnsafe?.user || {};
