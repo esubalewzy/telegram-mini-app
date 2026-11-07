@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analytics Mini App</title>
+  <title>SWERHB RMNCH Analytics</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
       padding: 16px;
       background-color: var(--tg-theme-bg-color, #ffffff);
@@ -16,22 +16,32 @@
     .container {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 12px;
       max-width: 800px;
       margin: 0 auto;
     }
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    select {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--tg-theme-hint-color, #ccc);
+      background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      color: var(--tg-theme-text-color, #000000);
+      font-weight: 600;
+    }
     .dashboard-container {
       width: 100%;
-      height: 400px;
+      height: 380px;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: 0;
-    }
+    iframe { width: 100%; height: 100%; border: 0; }
     .chat-container {
       display: flex;
       flex-direction: column;
@@ -49,11 +59,12 @@
       gap: 8px;
     }
     .message {
-      max-width: 80%;
-      padding: 8px 12px;
+      max-width: 85%;
+      padding: 10px 14px;
       border-radius: 12px;
       font-size: 14px;
       line-height: 1.4;
+      white-space: pre-wrap;
     }
     .user-message {
       align-self: flex-end;
@@ -89,72 +100,90 @@
       cursor: pointer;
       font-weight: bold;
     }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Analytics Dashboard</h2>
+    <h2>SWERHB Analytics Dashboard</h2>
+    
+    <!-- Filter Selectors -->
+    <div class="filter-bar">
+      <select id="zoneSelect">
+        <option value="Grand Total">Grand Total (All Zones)</option>
+        <option value="Kaffa Zone">Kaffa Zone</option>
+        <option value="Dawro Zone">Dawro Zone</option>
+        <option value="Sheka Zone">Sheka Zone</option>
+        <option value="Bench Sheko Zone">Bench Sheko Zone</option>
+        <option value="Konta Zone">Konta Zone</option>
+        <option value="West Omo Zone">West Omo Zone</option>
+      </select>
+
+      <select id="weekSelect">
+        <option value="All Weeks">All Weeks</option>
+        <option value="Week 15">Week 15</option>
+        <option value="Week 14">Week 14</option>
+        <option value="Week 13">Week 13</option>
+        <option value="Week 12">Week 12</option>
+        <option value="Week 11">Week 11</option>
+      </select>
+    </div>
+
     <div class="dashboard-container">
-      <!-- Looker Studio embed URL -->
       <iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" allowfullscreen></iframe>
     </div>
 
-    <h3>Ask Assistant</h3>
+    <h3>RMNCH AI Assistant</h3>
     <div class="chat-container">
       <div class="chat-box" id="chatBox">
-        <div class="message bot-message">Hello! Ask me anything about your analytics metrics.</div>
+        <div class="message bot-message">Select a Zone and Week above, then click Analyze to compute indicator coverage and detect missing woredas!</div>
       </div>
       <div class="input-area">
-        <input type="text" id="userInput" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendMessage()" />
-        <button id="sendBtn" onclick="sendMessage()">Send</button>
+        <input type="text" id="userInput" placeholder="Ask about specific coverage or missing woredas..." onkeydown="if(event.key==='Enter') sendMessage()" />
+        <button id="sendBtn" onclick="sendMessage()">Analyze</button>
       </div>
     </div>
   </div>
 
   <script>
     const tg = window.Telegram?.WebApp;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-    }
+    if (tg) { tg.ready(); tg.expand(); }
 
     async function sendMessage() {
       const inputEl = document.getElementById('userInput');
       const sendBtn = document.getElementById('sendBtn');
       const chatBox = document.getElementById('chatBox');
-      const message = inputEl.value.trim();
+      const zoneSelect = document.getElementById('zoneSelect');
+      const weekSelect = document.getElementById('weekSelect');
 
-      if (!message || sendBtn.disabled) return;
+      const message = inputEl.value.trim() || `Generate full coverage summary and list missing woredas.`;
 
-      // Add user message to UI
       appendMessage(message, 'user-message');
       inputEl.value = '';
 
-      // Lock UI to prevent spam/double-clicks
       inputEl.disabled = true;
       sendBtn.disabled = true;
 
-      // Add loading state message
-      const loadingDiv = appendMessage('Thinking...', 'bot-message');
+      const loadingDiv = appendMessage('Reading live sheet data & analyzing...', 'bot-message');
 
       try {
         const user = tg?.initDataUnsafe?.user || {};
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, user })
+          body: JSON.stringify({
+            message,
+            selectedZone: zoneSelect.value,
+            selectedWeek: weekSelect.value,
+            user
+          })
         });
 
         const data = await response.json();
         loadingDiv.textContent = data.reply || 'No response received.';
       } catch (err) {
-        loadingDiv.textContent = 'Network error. Please try again.';
+        loadingDiv.textContent = 'Error connecting to backend.';
       } finally {
-        // Re-enable input controls
         inputEl.disabled = false;
         sendBtn.disabled = false;
         inputEl.focus();
