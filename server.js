@@ -95,13 +95,14 @@ app.post('/api/chat', async (req, res) => {
       filteredData = filteredData.filter(r => r.Week && r.Week.toLowerCase().includes(selectedWeek.toLowerCase()));
     }
 
-    // 2. Extract missing/non-reporting woredas
-    const nonReportingWoredas = filteredData
-      .filter(r => r.Report && r.Report.toLowerCase() !== 'reported')
-      .map(r => r.Woreda)
-      .filter(Boolean);
+    // 2. Reporting Rate Breakdown based on 'Report' column
+    const totalExpectedWoredas = filteredData.length;
+    const reportingWoredas = filteredData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+    const nonReportingRows = filteredData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported');
+    const nonReportingWoredas = nonReportingRows.map(r => r.Woreda).filter(Boolean);
+    const reportingRate = totalExpectedWoredas > 0 ? ((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1) + '%' : '0%';
 
-    // 3. Pre-aggregate performed vs. eligible numeric values in Node.js
+    // 3. Pre-aggregate performed vs eligible with Full Indicator Names/Headers
     const headers = Object.keys(rawData[0] || {});
     const indicatorSummary = {};
 
@@ -122,7 +123,8 @@ app.post('/api/chat', async (req, res) => {
           });
 
           const coverage = totalEligible > 0 ? ((totalPerformed / totalEligible) * 100).toFixed(1) + '%' : 'N/A';
-          indicatorSummary[baseName] = {
+          indicatorSummary[performedKey] = {
+            fullName: performedKey,
             performed: totalPerformed,
             eligible: totalEligible,
             coverage: coverage
@@ -131,31 +133,71 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Compact system prompt sent to Groq
-    const systemPrompt = `You are an expert Health & RMNCH Business Analytics Assistant analyzing live SWERHB reporting data.
+    // 4. Data Quality Audit (Performed > Eligible with indicator full names)
+    const qualityIssues = [];
+    filteredData.forEach(row => {
+      const woredaName = row['Woreda'] || 'Unknown Woreda';
+      const zoneName = row['Zone'] || 'Unknown Zone';
+
+      headers.forEach(header => {
+        if (header.includes('Eligible')) {
+          const baseName = header.replace('Eligible', '').trim();
+          const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
+          
+          if (performedKey) {
+            const perfVal = parseFloat(row[performedKey]);
+            const eligVal = parseFloat(row[header]);
+
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal) {
+              qualityIssues.push({
+                woreda: woredaName,
+                zone: zoneName,
+                indicator: performedKey,
+                performed: perfVal,
+                eligible: eligVal,
+                discrepancy: `Reported performed value (${perfVal}) exceeds eligible pool (${eligVal})`
+              });
+            }
+          }
+        }
+      });
+    });
+
+    // Structured Prompt enforcing exact sequence
+    const systemPrompt = `You are an expert Health & RMNCH Analytics and Data Quality Auditor. Analyze the provided structured data from the SWERHB report.
 
 Scope Filters:
 - Zone: ${selectedZone || 'Grand Total'}
 - Week: ${selectedWeek || 'All Weeks'}
-- Total Reporting Woredas: ${filteredData.length}
-- Non-Reporting / Missing Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'None (All Reported)'}
 
-Pre-Aggregated Indicator Summary (Performed / Eligible = Coverage %):
+Reporting Rate Statistics:
+- Total Expected Woredas / Submissions: ${totalExpectedWoredas}
+- Submitted / Reported Count: ${reportingWoredas.length}
+- Reporting Rate: ${reportingRate}
+- Non-Reporting / Missing Woredas: ${nonReportingWoredas.length > 0 ? nonReportingWoredas.join(', ') : 'None (100% reporting)'}
+
+Indicator Summaries (Performed, Eligible, Coverage %):
 ${JSON.stringify(indicatorSummary, null, 2)}
 
-Instructions:
-1. Provide a clean summary of indicator coverage (Performed vs Eligible and calculated Coverage %).
-2. Explicitly list any missing/non-reporting Woredas.
-3. Keep the output clean, professional, concise, and structured with bullet points.`;
+Data Quality Anomalies (Performed > Eligible):
+${JSON.stringify(qualityIssues, null, 2)}
+
+**Strict Output Generation Order & Instructions:**
+1. **Reporting Rate Analysis**: Start by evaluating the reporting rate. State the submission numbers, the exact reporting percentage, and explicitly list the non-reporting woredas.
+2. **Good Performance Side**: Detail the indicators showing strong performance and high coverage percentages. Include the full indicator names (e.g., family planning, antenatal care, vaccinations) along with their numbers.
+3. **Poor Performance Side**: Highlight lagging indicators, low coverage rates, or areas needing immediate intervention. Include full indicator names.
+4. **Data Quality Issues**: Point out specific data quality discrepancies found in reported woredas where performed numbers exceed eligible pools. You MUST include the exact **Woreda name** and the **full indicator name** for every issue detected.
+
+Keep the output professional, cleanly structured with bold headings, and formatted with bullet points.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate coverage summary and list missing woredas for ${selectedZone || 'Grand Total'}.` }
+        { role: "user", content: message || `Analyze reporting rate, performance highlights, and data quality issues for ${selectedZone || 'Grand Total'}.` }
       ],
       model: "openai/gpt-oss-20b",
-      temperature: 0.5,
-      max_completion_tokens: 1024,
+      temperature: 0.4,
+      max_completion_tokens: 1500,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
@@ -163,7 +205,7 @@ Instructions:
 
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
-    res.status(500).json({ reply: 'Error generating report. Please try again.' });
+    res.status(500).json({ reply: 'Error generating structured report. Please try again.' });
   }
 });
 
