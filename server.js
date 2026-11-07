@@ -43,15 +43,15 @@ app.post('/api/chat', async (req, res) => {
     Provide a detailed, professional zone-by-zone analysis and feedback report based strictly on this data. 
     Highlight strengths, weaknesses, and actionable recommendations for each zone clearly and concisely.`;
 
-    // Call Groq's high-speed inference model
+    // Call Groq's active model API
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message }
       ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.7,
-      max_tokens: 1024,
+      model: "openai/gpt-oss-20b", // Updated to a currently supported active model ID
+      temperature: 0.6,
+      max_completion_tokens: 1024,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
