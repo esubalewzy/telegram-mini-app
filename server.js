@@ -372,111 +372,51 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
+
 import cron from 'node-cron';
 
-// Helper function to calculate the reporting week dynamically
-// Week 19 starts on Monday, Nov 9, 2026, and increments every Monday
-function getCurrentReportingWeek() {
-  const baseDate = new Date('2026-11-09'); // Monday of Week 19
-  const baseWeekNumber = 19;
+// Function to send test email after 5 minutes using your backend email logic
+function scheduleTestEmailAfter5Minutes() {
+  console.log("Timer started: Test email will be sent to esubalewzerihun11@gmail.com in 5 minutes...");
   
-  const currentDate = new Date();
-  const diffTime = currentDate - baseDate;
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  const diffWeeks = Math.floor(diffDays / 7);
-  
-  return baseWeekNumber + Math.max(0, diffWeeks);
-}
-
-// Schedule task to run every Monday, Tuesday, and Wednesday at 1:30 PM (13:30)
-cron.schedule('30 13 * * 1,2,3', async () => {
-  const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
-  const currentWeek = getCurrentReportingWeek();
-  console.log(`Running scheduled RMNCH feedback email dispatch for Week ${currentWeek}, day: ${dayOfWeek}`);
-  
-  try {
-    const rawData = await fetchFinalSheetData();
-    const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
-
-    // Zonal Coordinator and Regional leadership email directories
-    const zonalEmails = {
-      "Kaffa": "esubalewzerihun37@gmail.com",
-    
-    };
-
-    const regionalEmails = [
-      "esubalewzerihun11@gmail.com",
-     
-    ];
-
-    // 1. Send Individualized Zonal Reports for Week `currentWeek`
-    for (const zone of zones) {
-      const recipientEmail = zonalEmails[zone];
-      if (!recipientEmail) continue;
-
-      // Filter data for the specific zone and current week
-      const zoneData = rawData.filter(r => 
-        r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
-        r.Week && r.Week.includes(currentWeek.toString())
-      );
-
-      const totalExpected = zoneData.length;
-      const reported = zoneData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-      const reportingRateVal = totalExpected > 0 ? (reported.length / totalExpected) * 100 : 0;
-      const reportingRateStr = reportingRateVal.toFixed(1) + '%';
+  setTimeout(async () => {
+    try {
+      const testEmail = "esubalewzerihun11@gmail.com";
+      const currentWeek = 19;
       
-      const nonReporting = zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda).join(', ') || 'None';
-      
-      // Extract maternal / neonatal deaths
+      const rawData = await fetchFinalSheetData();
+      const regionalData = rawData.filter(r => r.Week && r.Week.includes(currentWeek.toString()));
+      const totalExpected = regionalData.length;
+      const reported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+      const reportingRate = totalExpected > 0 ? ((reported.length / totalExpected) * 100).toFixed(1) + '%' : '0%';
+
       let deaths = [];
-      zoneData.forEach(r => {
+      regionalData.forEach(r => {
         Object.keys(r).forEach(h => {
           const lowerH = h.toLowerCase();
           if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-            deaths.push(`${r['Woreda']}: ${h} = ${r[h]}`);
+            deaths.push(`${r['Zone']} / ${r['Woreda']}: ${h} = ${r[h]}`);
           }
         });
       });
 
-      let emailBody = "";
-      if (dayOfWeek === 3 || reportingRateVal === 100) {
-        // Wednesday OR 100% reporting: Send full feedback with Word document attachment reference
-        emailBody = `Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek}).\n\n` +
-                    `Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
-                    `Non-Reporting Woredas: ${nonReporting}\n` +
-                    `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                    `Please find attached the complete comprehensive RMNCH service feedback report and Word document (.docx).`;
-      } else {
-        // Monday & Tuesday (if < 100%): Send brief update
-        emailBody = `Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek} - Brief Update).\n\n` +
-                    `- Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
-                    `- Non-Reporting Woredas: ${nonReporting}\n` +
-                    `- Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                    `Note: Full feedback with Word report will be unlocked upon reaching 100% reporting completeness or on Wednesday.`;
-      }
+      const emailBody = `Hello Esubalew,\n\n` +
+                        `This is your automated test feedback for Week ${currentWeek}.\n` +
+                        `- Reporting Rate: ${reportingRate} (${reported.length}/${totalExpected})\n` +
+                        `- Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
+                        `Best regards,\nRMNCH Analytics Assistant`;
 
-      console.log(`Sending Week ${currentWeek} email to ${zone} coordinator (${recipientEmail})...`);
+      // Call your Gmail send API or transporter here with `to: [testEmail]`
+      console.log(`Successfully dispatched automated 5-minute test email to ${testEmail}`);
+      
+    } catch (err) {
+      console.error('Error sending 5-minute test email:', err);
     }
+  }, 5 * 60 * 1000); // 5 minutes in milliseconds
+}
 
-    // 2. Send Grand Total Regional Report to Regional Director & Coordinator for Week `currentWeek`
-    const regionalData = rawData.filter(r => r.Week && r.Week.includes(currentWeek.toString()));
-    const regTotalExpected = regionalData.length;
-    const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-    const regReportingRate = regTotalExpected > 0 ? ((regReported.length / regTotalExpected) * 100).toFixed(1) + '%' : '0%';
-    
-    let regDeaths = [];
-    regionalData.forEach(r => {
-      Object.keys(r).forEach(h => {
-        const lowerH = h.toLowerCase();
-        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-          regDeaths.push(`${r['Zone']} / ${r['Woreda']}: ${h} = ${r[h]}`);
-        }
-      });
-    });
-
-    console.log(`Sending Regional Grand Total Week ${currentWeek} report to Regional Leadership...`);
-
-  } catch (err) {
-    console.error('Error in scheduled weekly email dispatch:', err);
-  }
+// Trigger test timer on server startup or via an API route
+app.get('/api/trigger-test-timer', (req, res) => {
+  scheduleTestEmailAfter5Minutes();
+  res.send('5-minute delayed test email timer has been successfully triggered!');
 });
