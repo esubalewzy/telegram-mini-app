@@ -90,7 +90,6 @@ app.post('/api/chat', async (req, res) => {
       return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
     }
 
-    // Filter data for selected zone/week
     let filteredData = rawData;
     if (selectedZone && selectedZone !== 'Grand Total') {
       filteredData = filteredData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase());
@@ -105,7 +104,6 @@ app.post('/api/chat', async (req, res) => {
     const nonReportingWoredas = nonReportingRows.map(r => r.Woreda).filter(Boolean);
     const reportingRate = totalExpectedWoredas > 0 ? ((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1) + '%' : '0%';
 
-    // Multi-week trend aggregation for historical graph generation
     let weeklyTrends = {};
     let zoneAllData = selectedZone && selectedZone !== 'Grand Total' 
       ? rawData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase()) 
@@ -124,7 +122,7 @@ app.post('/api/chat', async (req, res) => {
 
     let weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
       const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
-      return `Week ${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected} woredas)`;
+      return `Week ${wk}:${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
     }).join(' | ');
 
     const headers = Object.keys(rawData[0] || {});
@@ -176,7 +174,7 @@ app.post('/api/chat', async (req, res) => {
         const hepBDVal = parseFloat(row[hepBDKey]) || 0;
         if (skilledVal > hepBDVal) {
           const missed = skilledVal - hepBDVal;
-          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
+          hepBDMissedWoredas.push(`${woredaName}:${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
         }
       }
 
@@ -189,32 +187,4 @@ app.post('/api/chat', async (req, res) => {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
             if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 6) {
-              qualityIssues.push(`[Over-reporting Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
-            }
-          }
-        }
-      });
-
-      const anc1Key = headers.find(h => h.includes('2.1') && !h.includes('Eligible') && !h.includes('Target'));
-      const anc4Key = headers.find(h => h.includes('2.3') && !h.includes('Eligible') && !h.includes('Target'));
-      if (anc1Key && anc4Key) {
-        const anc1 = parseFloat(row[anc1Key]) || 0;
-        const anc4 = parseFloat(row[anc4Key]) || 0;
-        if (anc4 > anc1 && qualityIssues.length < 8) {
-          qualityIssues.push(`[Logic Consistency Error] ${woredaName}: ANC4 visits (${anc4}) cannot exceed ANC1 visits (${anc1}).`);
-        }
-      }
-
-      headers.forEach(h => {
-        const lowerH = h.toLowerCase();
-        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && !h.includes('Eligible') && !h.includes('Target')) {
-          const deathVal = parseFloat(row[h]) || 0;
-          if (deathVal > 0) {
-            mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${deathVal} case(s) under [${h}]. Immediate investigation required.`);
-          }
-        }
-      });
-    });
-
-    let comparisonContext = '';
-    if (!selectedZone
+              qualityIssues.push(`[Over-reporting Error] ${woredaName} -${performedKey}: Per
