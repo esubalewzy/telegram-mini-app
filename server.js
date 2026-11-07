@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
 import { 
   Document, Packer, Paragraph, TextRun, HeadingLevel, 
-  Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ShadingType 
+  Table, TableRow, TableCell, WidthType, BorderStyle 
 } from 'docx';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -141,13 +141,14 @@ app.post('/api/chat', async (req, res) => {
 
     const qualityIssues = [];
     const hepBDMissedWoredas = [];
+    const mortalityAlerts = [];
 
     filteredData.forEach(row => {
       const woredaName = row['Woreda'] || 'Unknown Woreda';
 
+      // HepBD Audit
       const skilledKey = headers.find(h => h.includes('2.7') && !h.includes('Eligible') && !h.includes('Target'));
       const hepBDKey = headers.find(h => h.includes('3.3') && !h.includes('Eligible') && !h.includes('Target'));
-
       if (skilledKey && hepBDKey) {
         const skilledVal = parseFloat(row[skilledKey]) || 0;
         const hepBDVal = parseFloat(row[hepBDKey]) || 0;
@@ -157,6 +158,7 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
+      // 1. Performed > Eligible consistency check
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -165,18 +167,31 @@ app.post('/api/chat', async (req, res) => {
           if (performedKey) {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 8) {
-              qualityIssues.push(`[Consistency Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) > Eligible (${eligVal}).`);
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 6) {
+              qualityIssues.push(`[Over-reporting Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
             }
           }
         }
       });
 
+      // 2. Related indicator consistency checks (e.g. ANC1 vs ANC4, or Pentavalent 1 vs Pentavalent 3)
+      const anc1Key = headers.find(h => h.includes('2.1') && !h.includes('Eligible') && !h.includes('Target'));
+      const anc4Key = headers.find(h => h.includes('2.3') && !h.includes('Eligible') && !h.includes('Target'));
+      if (anc1Key && anc4Key) {
+        const anc1 = parseFloat(row[anc1Key]) || 0;
+        const anc4 = parseFloat(row[anc4Key]) || 0;
+        if (anc4 > anc1 && qualityIssues.length < 8) {
+          qualityIssues.push(`[Logic Consistency Error] ${woredaName}: ANC4 visits (${anc4}) cannot exceed ANC1 visits (${anc1}).`);
+        }
+      }
+
+      // 3. Strict Maternal & Neonatal Mortality check (Only list if > 0)
       headers.forEach(h => {
-        if ((h.includes('2.8') || h.toLowerCase().includes('maternal death') || h.includes('4.4') || h.toLowerCase().includes('neonatal')) && !h.includes('Eligible') && !h.includes('Target')) {
+        const lowerH = h.toLowerCase();
+        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && !h.includes('Eligible') && !h.includes('Target')) {
           const deathVal = parseFloat(row[h]) || 0;
           if (deathVal > 0) {
-            qualityIssues.push(`[Mortality Alert] ${woredaName}: ${h} = ${deathVal}`);
+            mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${deathVal} case(s) under [${h}]. Immediate investigation required.`);
           }
         }
       });
@@ -187,150 +202,43 @@ app.post('/api/chat', async (req, res) => {
       let zoneStats = {};
       rawData.forEach(r => {
         const z = r.Zone || 'Unknown Zone';
-        if (!zoneStats[z]) zoneStats[z] = { expected: 0, reported: 0 };
-        zoneStats[z].expected++;
+        if (!zoneStats[z]) zoneStats[z] = { total: 0, reported: 0 };
+        zoneStats[z].total++;
         if (r.Report && r.Report.toLowerCase() === 'reported') zoneStats[z].reported++;
       });
-      comparisonContext = `Zone vs Zone Comparison: ${JSON.stringify(zoneStats)}`;
+      comparisonContext = `Zone vs Zone Comparison against HSTP-II targets: ${JSON.stringify(zoneStats)}`;
     } else {
       let woredaStats = filteredData.map(r => ({ woreda: r.Woreda, status: r.Report || 'Not Reported' }));
-      comparisonContext = `Woreda Performance in ${selectedZone}: ${JSON.stringify(woredaStats)}`;
+      comparisonContext = `Woreda Performance in ${selectedZone} against HSTP-II targets: ${JSON.stringify(woredaStats)}`;
     }
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report covering ALL sections.
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report.
 
-Greeting Header: "Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
+Greeting Header (Must start with):
+"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${selectedZone || 'Grand Total'} Zone, Week ${selectedWeek || 'All Weeks'}"
 
 Data Context:
 - Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
 - Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
 - Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
-- Quality Anomalies & Mortalities: ${qualityIssues.join(' | ') || 'None'}
+- Consistency & Over-reporting Quality Issues: ${qualityIssues.join(' | ') || 'None'}
+- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported in this selection.'}
 - ${comparisonContext}
 
-Formatting Instructions:
-- For Categories 1 to 5, you MUST present the indicators using clean Markdown tables with columns: | Indicator | Performed | Eligible | Coverage % |
-
-Required Report Structure:
+Required Report Structure & Instructions:
 1. **Reporting Rate Summary**
-2. **Category 1: SRH Services** (Table format)
-3. **Category 2: Maternal Services** (Table format)
-4. **Category 3: EPI Services** (Table format)
-5. **Category 4: Child Health Service** (Table format)
-6. **Category 5: Nutrition** (Table format)
+2. **Category 1: SRH Services** (Markdown Table format: | Indicator | Performed | Eligible | Coverage % |)
+3. **Category 2: Maternal Services** (Markdown Table format)
+4. **Category 3: EPI Services** (Markdown Table format)
+5. **Category 4: Child Health Service** (Markdown Table format)
+6. **Category 5: Nutrition** (Markdown Table format)
 7. **Hepatitis BD Birth Dose Missed Woredas Audit**
-8. **Comparative Benchmarking**
-9. **Data Quality, Anomalies & Mortalities**`;
+8. **Comparative Benchmarking vs. Ethiopian HSTP-II Guidelines**: Evaluate coverage against national HSTP-II strategic targets (e.g., ANC4, Skilled Delivery, Pentavalent 3 coverage benchmarks). Compare Zones vs. Zones or Woredas vs. Woredas accordingly.
+9. **Data Quality & Consistency Audit**: Highlight over-reporting (performed > eligible) and related indicator logic errors (e.g., ANC4 > ANC1).
+10. **Mortality Alerts**: List strictly maternal and neonatal deaths if reported. If none, explicitly state that zero maternal or neonatal deaths were recorded.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full table-based report for ${selectedZone || 'Grand Total'}.` }
-      ],
-      model: "openai/gpt-oss-20b",
-      temperature: 0.3,
-      max_completion_tokens: 2000,
-    });
-
-    const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
-    res.json({ reply: responseText });
-
-  } catch (error) {
-    console.error('Groq/Sheet Error Details:', error);
-    res.status(500).json({ reply: 'Error generating report. Please try again.' });
-  }
-});
-
-// Helper to convert markdown tables into native Word docx tables
-app.post('/api/export-docx', async (req, res) => {
-  try {
-    const { reportText, title } = req.body;
-    const lines = reportText.split('\n');
-    const docChildren = [
-      new Paragraph({
-        text: title || "SWERHB RMNCH Analytics Report",
-        heading: HeadingLevel.HEADING_1,
-        spacing: { after: 200 }
-      })
-    ];
-
-    let i = 0;
-    while (i < lines.length) {
-      let line = lines[i].trim();
-
-      // Check if line starts a markdown table
-      if (line.startsWith('|') && line.endsWith('|')) {
-        let tableRows = [];
-        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
-          let rowLine = lines[i].trim();
-          // Skip markdown separator line like |---|---|
-          if (!rowLine.includes('---')) {
-            let cells = rowLine.split('|').filter(c => c !== '').map(c => c.trim());
-            tableRows.push(cells);
-          }
-          i++;
-        }
-
-        if (tableRows.length > 0) {
-          const docTableRows = tableRows.map((rowCells, rowIndex) => {
-            return new TableRow({
-              children: rowCells.map(cellText => {
-                return new TableCell({
-                  children: [new Paragraph({
-                    children: [new TextRun({ 
-                      text: cellText, 
-                      bold: rowIndex === 0,
-                      size: 20 
-                    })]
-                  })],
-                  width: { size: 2000, type: WidthType.DXA },
-                  shading: rowIndex === 0 ? { fill: "2481CC" } : undefined
-                });
-              })
-            });
-          });
-
-          docChildren.push(new Table({
-            rows: docTableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
-              insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
-            }
-          }));
-          docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
-        }
-      } else {
-        if (line !== '') {
-          docChildren.push(new Paragraph({
-            children: [new TextRun({ text: lines[i], size: 22 })],
-            spacing: { after: 100 }
-          }));
-        }
-        i++;
-      }
-    }
-
-    const doc = new Document({
-      sections: [{ properties: {}, children: docChildren }],
-    });
-
-    const buffer = await Packer.toBuffer(doc);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Analytics_Report.docx');
-    res.send(buffer);
-  } catch (err) {
-    console.error('Docx Export Error:', err);
-    res.status(500).json({ error: 'Failed to generate Word document.' });
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+        { role: "
