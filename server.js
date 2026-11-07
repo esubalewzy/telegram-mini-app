@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
-const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
