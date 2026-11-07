@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
+import docx from 'docx';
+const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -135,11 +137,27 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Anomaly detection: Performed > Eligible, Maternal/Neonatal deaths, and outliers
+    // Anomaly Audit: HepBD Gap + Performed > Eligible + Mortality
     const qualityIssues = [];
+    const hepBDMissedWoredas = [];
+
     filteredData.forEach(row => {
       const woredaName = row['Woreda'] || 'Unknown Woreda';
 
+      // HepBD Gap Check: Skilled Delivery (2.7) vs Hepatitis BD (3.3)
+      const skilledKey = headers.find(h => h.includes('2.7') && !h.includes('Eligible') && !h.includes('Target'));
+      const hepBDKey = headers.find(h => h.includes('3.3') && !h.includes('Eligible') && !h.includes('Target'));
+
+      if (skilledKey && hepBDKey) {
+        const skilledVal = parseFloat(row[skilledKey]) || 0;
+        const hepBDVal = parseFloat(row[hepBDKey]) || 0;
+        if (skilledVal > hepBDVal) {
+          const missed = skilledVal - hepBDVal;
+          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births but only ${hepBDVal} Hepatitis BD doses (${missed} babies missed birth dose)`);
+        }
+      }
+
+      // Performed > Eligible Check
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -148,52 +166,78 @@ app.post('/api/chat', async (req, res) => {
           if (performedKey) {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 15) {
-              qualityIssues.push(`[Consistency Issue] ${woredaName} on indicator '${performedKey}': Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
+            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 10) {
+              qualityIssues.push(`[Consistency Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) > Eligible (${eligVal}).`);
             }
           }
         }
       });
 
-      // Check Maternal Deaths (2.8) and Neonatal Deaths (4.4)
+      // Mortality Check
       headers.forEach(h => {
         if ((h.includes('2.8') || h.toLowerCase().includes('maternal death') || h.includes('4.4') || h.toLowerCase().includes('neonatal')) && !h.includes('Eligible') && !h.includes('Target')) {
           const deathVal = parseFloat(row[h]) || 0;
           if (deathVal > 0) {
-            qualityIssues.push(`[Vital Event Reported] ${woredaName} reported mortality on [${h}]: Count = ${deathVal}`);
+            qualityIssues.push(`[Mortality Alert] ${woredaName} reported: ${h} = ${deathVal}`);
           }
         }
       });
     });
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics Assistant. You must output the analysis strictly adhering to the user's requested template and headings.
+    // Comparative Analysis Data Pre-computation
+    let comparisonContext = '';
+    if (!selectedZone || selectedZone === 'Grand Total') {
+      // Zone vs Zone breakdown
+      let zoneStats = {};
+      rawData.forEach(r => {
+        const z = r.Zone || 'Unknown Zone';
+        if (!zoneStats[z]) zoneStats[z] = { expected: 0, reported: 0 };
+        zoneStats[z].expected++;
+        if (r.Report && r.Report.toLowerCase() === 'reported') zoneStats[z].reported++;
+      });
+      comparisonContext = `Comparative Analysis (Zone vs Zone Performance):\n${JSON.stringify(zoneStats, null, 2)}`;
+    } else {
+      // Woreda vs Woreda breakdown inside selected zone
+      let woredaStats = filteredData.map(r => ({
+        woreda: r.Woreda,
+        reported: r.Report === 'Reported' ? 'Yes' : 'No'
+      }));
+      comparisonContext = `Comparative Analysis (Woreda vs Woreda Performance in ${selectedZone}):\n${JSON.stringify(woredaStats, null, 2)}`;
+    }
 
-Greeting to prepend at the very beginning of your response:
-"Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report adhering strictly to this sequence:
+
+Greeting Header: "Hello, This is ${selectedZone || 'Grand Total'} Zone Week ${selectedWeek || 'All Weeks'} report summary"
 
 Data Context:
-- Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas} woredas reported)
+- Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
 - Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Data Quality / Anomalies / Mortalities: ${qualityIssues.length > 0 ? qualityIssues.join(' | ') : 'None detected'}
+- Hepatitis BD Audit (Missed Birth Doses): ${hepBDMissedWoredas.length > 0 ? hepBDMissedWoredas.join(' | ') : 'None (All skilled birth babies vaccinated)'}
+- Inconsistency Anomalies & Mortalities: ${qualityIssues.length > 0 ? qualityIssues.join(' | ') : 'None'}
+- ${comparisonContext}
 
-Required Report Sections:
-1. **Non-Reporting Woredas**: List all non-reporting woredas.
-2. **Category 1: SRH Services**: List indicators, performed, eligible, and coverage %.
-3. **Category 2: Maternal Services**: List indicators, performed, eligible, and coverage %.
-4. **Category 3: EPI Services**: List indicators, performed, eligible, and coverage %.
-5. **Category 4: Child Health Service**: List indicators, performed, eligible, and coverage %.
-6. **Category 5: Nutrition**: List indicators, performed, eligible, and coverage %.
-7. **Data Quality, Anomalies & Mortalities**: Highlight consistency issues (performed > eligible), unusual spikes, and reported maternal or neonatal deaths with their respective woreda names.`;
+Required Report Structure:
+1. **Reporting Rate Summary**: State submission rates and list non-reporting woredas.
+2. **Category 1: SRH Services**: List all indicators with performed, eligible, coverage %.
+3. **Category 2: Maternal Services**: List all indicators with performed, eligible, coverage %.
+4. **Category 3: EPI Services**: List all indicators with performed, eligible, coverage %.
+5. **Category 4: Child Health Service**: List all indicators with performed, eligible, coverage %.
+6. **Category 5: Nutrition**: List all indicators with performed, eligible, coverage %.
+7. **Hepatitis BD Birth Dose Missed Woredas Audit**: Explicitly list all Woredas failing to vaccinate all skilled birth attendant babies with HepBD.
+8. **Comparative Analysis & Benchmark**:
+   - If Grand Total was selected: Compare Zone vs. Zone performance and rank them.
+   - If a specific Zone was selected: Compare Woreda vs. Woreda performance, highlighting top and poor performer woredas.
+9. **Data Quality, Anomalies & Mortalities**: Highlight consistency errors (performed > eligible) and reported maternal/neonatal deaths.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full classified report for zone ${selectedZone} and week ${selectedWeek}.` }
+        { role: "user", content: message || `Generate full report for ${selectedZone || 'Grand Total'}.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.3,
-      max_completion_tokens: 1200,
+      max_completion_tokens: 1500,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
@@ -202,6 +246,36 @@ Required Report Sections:
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
     res.status(500).json({ reply: 'Error generating report. Please try again.' });
+  }
+});
+
+// Endpoint to generate downloadable Word Document (.docx)
+app.post('/api/export-docx', async (req, res) => {
+  try {
+    const { reportText, title } = req.body;
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            text: title || "SWERHB RMNCH Analytics Report",
+            heading: HeadingLevel.HEADING_1,
+          }),
+          ...reportText.split('\n').map(line => new Paragraph({
+            children: [new TextRun(line)]
+          }))
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Analytics_Report.docx');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Docx Export Error:', err);
+    res.status(500).json({ error: 'Failed to generate Word document.' });
   }
 });
 
