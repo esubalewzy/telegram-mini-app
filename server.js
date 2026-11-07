@@ -382,50 +382,103 @@ app.listen(PORT, () => {
 
 
 
-import cron from 'node-cron';
 
-// Function to send test email after 5 minutes using your backend email logic
-function scheduleTestEmailAfter5Minutes() {
-  console.log("Timer started: Test email will be sent to esubalewzerihun11@gmail.com in 5 minutes...");
-  
-  setTimeout(async () => {
-    try {
-      const testEmail = "esubalewzerihun11@gmail.com";
-      const currentWeek = 19;
+  import cron from 'node-cron';
+import nodemailer from 'nodemailer';
+
+// Configure your email transporter (e.g., Gmail SMTP with App Password)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // e.g., your email address
+    pass: process.env.EMAIL_PASS  // your Gmail App Password
+  }
+});
+
+// Helper function to calculate current reporting week starting Week 19 on Nov 9, 2026
+function getCurrentReportingWeek() {
+  const baseDate = new Date('2026-11-09');
+  const baseWeekNumber = 19;
+  const currentDate = new Date();
+  const diffTime = currentDate - baseDate;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const diffWeeks = Math.floor(diffDays / 7);
+  return baseWeekNumber + Math.max(0, diffWeeks);
+}
+
+// Scheduled Cron Job: Runs every Monday, Tuesday, and Wednesday at 1:30 PM (13:30)
+cron.schedule('30 13 * * 1,2,3', async () => {
+  const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
+  const currentWeek = getCurrentReportingWeek();
+  console.log(`[CRON] Running automated email dispatch for Week ${currentWeek}, day: ${dayOfWeek}`);
+
+  try {
+    const rawData = await fetchFinalSheetData();
+    const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
+
+    const zonalEmails = {
+      "Kaffa": "kaffa.coordinator@swerhb.gov.et",
+      "Dawro": "dawro.coordinator@swerhb.gov.et",
+      "West Omo": "westomo.coordinator@swerhb.gov.et",
+      "Bench Sheko": "benchsheko.coordinator@swerhb.gov.et",
+      "Sheka": "sheka.coordinator@swerhb.gov.et",
+      "Konta": "konta.coordinator@swerhb.gov.et"
+    };
+
+    // 1. Send Individualized Zonal Reports
+    for (const zone of zones) {
+      const recipientEmail = zonalEmails[zone];
+      if (!recipientEmail) continue;
+
+      const zoneData = rawData.filter(r => 
+        r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
+        r.Week && r.Week.includes(currentWeek.toString())
+      );
+
+      const totalExpected = zoneData.length;
+      const reported = zoneData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+      const reportingRateVal = totalExpected > 0 ? (reported.length / totalExpected) * 100 : 0;
+      const reportingRateStr = reportingRateVal.toFixed(1) + '%';
       
-      const rawData = await fetchFinalSheetData();
-      const regionalData = rawData.filter(r => r.Week && r.Week.includes(currentWeek.toString()));
-      const totalExpected = regionalData.length;
-      const reported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-      const reportingRate = totalExpected > 0 ? ((reported.length / totalExpected) * 100).toFixed(1) + '%' : '0%';
-
+      const nonReporting = zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda).join(', ') || 'None';
+      
       let deaths = [];
-      regionalData.forEach(r => {
+      zoneData.forEach(r => {
         Object.keys(r).forEach(h => {
           const lowerH = h.toLowerCase();
           if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-            deaths.push(`${r['Zone']} / ${r['Woreda']}: ${h} = ${r[h]}`);
+            deaths.push(`${r['Woreda']}: ${h} = ${r[h]}`);
           }
         });
       });
 
-      const emailBody = `Hello Esubalew,\n\n` +
-                        `This is your automated test feedback for Week ${currentWeek}.\n` +
-                        `- Reporting Rate: ${reportingRate} (${reported.length}/${totalExpected})\n` +
-                        `- Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                        `Best regards,\nRMNCH Analytics Assistant`;
+      let emailBody = "";
+      if (dayOfWeek === 3 || reportingRateVal === 100) {
+        emailBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek}).\n\n` +
+                    `Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
+                    `Non-Reporting Woredas: ${nonReporting}\n` +
+                    `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
+                    `Please find attached the complete comprehensive RMNCH service feedback report.`;
+      } else {
+        emailBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek} - Brief Update).\n\n` +
+                    `- Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
+                    `- Non-Reporting Woredas: ${nonReporting}\n` +
+                    `- Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
+                    `Note: Full feedback is unlocked upon reaching 100% reporting completeness or on Wednesday.`;
+      }
 
-      // Call your Gmail send API or transporter here with `to: [testEmail]`
-      console.log(`Successfully dispatched automated 5-minute test email to ${testEmail}`);
-      
-    } catch (err) {
-      console.error('Error sending 5-minute test email:', err);
+      // Automatically send email via transporter
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: recipientEmail,
+        subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (Week ${currentWeek})`,
+        text: emailBody
+      });
+
+      console.log(`[Auto-Email] Sent Week ${currentWeek} report to ${zone} coordinator.`);
     }
-  }, 5 * 60 * 1000); // 5 minutes in milliseconds
-}
 
-// Trigger test timer on server startup or via an API route
-app.get('/api/trigger-test-timer', (req, res) => {
-  scheduleTestEmailAfter5Minutes();
-  res.send('5-minute delayed test email timer has been successfully triggered!');
+  } catch (err) {
+    console.error('Error in automated email dispatch cron job:', err);
+  }
 });
