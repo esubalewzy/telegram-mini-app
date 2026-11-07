@@ -146,7 +146,6 @@ app.post('/api/chat', async (req, res) => {
     filteredData.forEach(row => {
       const woredaName = row['Woreda'] || 'Unknown Woreda';
 
-      // HepBD Audit
       const skilledKey = headers.find(h => h.includes('2.7') && !h.includes('Eligible') && !h.includes('Target'));
       const hepBDKey = headers.find(h => h.includes('3.3') && !h.includes('Eligible') && !h.includes('Target'));
       if (skilledKey && hepBDKey) {
@@ -158,7 +157,6 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
-      // 1. Performed > Eligible consistency check
       headers.forEach(header => {
         if (header.includes('Eligible')) {
           const baseName = header.replace('Eligible', '').trim();
@@ -174,7 +172,6 @@ app.post('/api/chat', async (req, res) => {
         }
       });
 
-      // 2. Related indicator consistency checks (e.g. ANC1 vs ANC4, or Pentavalent 1 vs Pentavalent 3)
       const anc1Key = headers.find(h => h.includes('2.1') && !h.includes('Eligible') && !h.includes('Target'));
       const anc4Key = headers.find(h => h.includes('2.3') && !h.includes('Eligible') && !h.includes('Target'));
       if (anc1Key && anc4Key) {
@@ -185,7 +182,6 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
-      // 3. Strict Maternal & Neonatal Mortality check (Only list if > 0)
       headers.forEach(h => {
         const lowerH = h.toLowerCase();
         if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && !h.includes('Eligible') && !h.includes('Target')) {
@@ -241,4 +237,107 @@ Required Report Structure & Instructions:
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "
+        { role: "user", content: message || `Generate full report according to HSTP-II guidelines.` }
+      ],
+      model: "openai/gpt-oss-20b",
+      temperature: 0.3,
+      max_completion_tokens: 2200,
+    });
+
+    const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
+    res.json({ reply: responseText });
+
+  } catch (error) {
+    console.error('Groq/Sheet Error Details:', error);
+    res.status(500).json({ reply: 'Error generating report. Please try again.' });
+  }
+});
+
+app.post('/api/export-docx', async (req, res) => {
+  try {
+    const { reportText, title } = req.body;
+    const lines = reportText.split('\n');
+    const docChildren = [
+      new Paragraph({
+        text: title || "This Is Weekly Essential RMNCH Service Report Feedback",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 200 }
+      })
+    ];
+
+    let i = 0;
+    while (i < lines.length) {
+      let line = lines[i].trim();
+
+      if (line.startsWith('|') && line.endsWith('|')) {
+        let tableRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          let rowLine = lines[i].trim();
+          if (!rowLine.includes('---')) {
+            let cells = rowLine.split('|').filter(c => c !== '').map(c => c.trim());
+            tableRows.push(cells);
+          }
+          i++;
+        }
+
+        if (tableRows.length > 0) {
+          const docTableRows = tableRows.map((rowCells, rowIndex) => {
+            return new TableRow({
+              children: rowCells.map(cellText => {
+                return new TableCell({
+                  children: [new Paragraph({
+                    children: [new TextRun({ 
+                      text: cellText, 
+                      bold: rowIndex === 0,
+                      size: 20 
+                    })]
+                  })],
+                  width: { size: 2000, type: WidthType.DXA }
+                });
+              })
+            });
+          });
+
+          docChildren.push(new Table({
+            rows: docTableRows,
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "EEEEEE" },
+            }
+          }));
+          docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
+        }
+      } else {
+        if (line !== '') {
+          docChildren.push(new Paragraph({
+            children: [new TextRun({ text: lines[i], size: 22 })],
+            spacing: { after: 100 }
+          }));
+        }
+        i++;
+      }
+    }
+
+    const doc = new Document({
+      sections: [{ properties: {}, children: docChildren }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Service_Report_Feedback.docx');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Docx Export Error:', err);
+    res.status(500).json({ error: 'Failed to generate Word document.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
