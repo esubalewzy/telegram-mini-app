@@ -122,7 +122,7 @@ app.post('/api/chat', async (req, res) => {
 
     let weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
       const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
-      return `Week ${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
+      return `Week ${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected} woredas)`;
     }).join(' | ');
 
     const headers = Object.keys(rawData[0] || {});
@@ -149,8 +149,7 @@ app.post('/api/chat', async (req, res) => {
           });
 
           const coverageNum = totalEligible > 0 ? parseFloat(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
-          const coverage = coverageNum + '%';
-          const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage: coverageNum };
+          const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage: coverageNum + '%' };
 
           if (baseName.startsWith('1.')) categorizedIndicators.cat1_srh.push(indicatorEntry);
           else if (baseName.startsWith('2.')) categorizedIndicators.cat2_maternal.push(indicatorEntry);
@@ -161,13 +160,21 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // HSTP-II National Benchmark Targets mapping
-    const hstp2Benchmarks = {
-      "Category 1: SRH Services": { target: 75, desc: "Contraceptive Acceptance Rate / Family Planning Target (~75%)" },
-      "Category 2: Maternal Services": { target: 81, desc: "ANC4 Coverage (~81%) & Skilled Delivery (~80%)" },
-      "Category 3: EPI Services": { target: 90, desc: "Pentavalent-3 / Fully Immunized Target (~90%)" },
-      "Category 4: Child Health Service": { target: 85, desc: "Pneumonia/Diarrhea Treatment & Care Seeking (~85%)" },
-      "Category 5: Nutrition": { target: 80, desc: "SAM Screening and Growth Monitoring (~80%)" }
+    // Official Ethiopian HSTP-II National Targets (2020/21 - 2024/25)
+    const hstp2OfficialTargets = {
+      maternalAndReproductive: {
+        "Contraceptive Prevalence Rate (CPR)": "50%",
+        "ANC 4 Visits": "81%",
+        "Skilled Delivery Attendance": "76%",
+        "Early PNC within 2 days": "76%"
+      },
+      childHealthAndEpi: {
+        "Pentavalent-3 Coverage": "85%",
+        "Full Vaccination Coverage": "75%",
+        "MCV2 (Second dose measles)": "80%",
+        "Treatment of Pneumonia (Under-5)": "69%",
+        "Treatment of Diarrhea with ORS & Zinc": "67%"
+      }
     };
 
     const qualityIssues = [];
@@ -224,42 +231,42 @@ app.post('/api/chat', async (req, res) => {
       });
     });
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report.
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, exhaustive analytical report without truncating any categories.
 
-Greeting Header (Must start with):
+Greeting Header (Must start with exactly):
 "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${selectedZone || 'Grand Total'} Zone, Week ${selectedWeek || 'All Weeks'}"
 
 Data Context:
 - Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
-- Multi-Week Trend Data: ${weeklyTrendSummary}
-- Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Ethiopian HSTP-II Strategic Benchmarks: ${JSON.stringify(hstp2Benchmarks)}
+- Multi-Week Reporting Trend: ${weeklyTrendSummary}
+- Complete Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Official Ethiopian HSTP-II Targets: ${JSON.stringify(hstp2OfficialTargets)}
 - Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
-- Quality Issues: ${qualityIssues.join(' | ') || 'None'}
-- Mortality Alerts: ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
+- Consistency & Data Quality Issues: ${qualityIssues.join(' | ') || 'None'}
+- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
 
 Required Report Structure:
 1. **Reporting Rate Summary**
 2. **Multi-Week Reporting Trend Analysis**
-3. **Category 1: SRH Services** (Markdown Table format: | Indicator | Performed | Eligible | Coverage % | vs HSTP-II Target |)
-4. **Category 2: Maternal Services** (Markdown Table format with vs HSTP-II Target)
-5. **Category 3: EPI Services** (Markdown Table format with vs HSTP-II Target)
-6. **Category 4: Child Health Service** (Markdown Table format with vs HSTP-II Target)
-7. **Category 5: Nutrition** (Markdown Table format with vs HSTP-II Target)
+3. **Category 1: SRH Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+4. **Category 2: Maternal Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+5. **Category 3: EPI Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+6. **Category 4: Child Health Service** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+7. **Category 5: Nutrition** (Table format: | Indicator | Performed | Eligible | Coverage % |)
 8. **Hepatitis BD Birth Dose Missed Woredas Audit**
-9. **Comprehensive HSTP-II Benchmarking Evaluation**: Explicitly compare the category coverages against the national Ethiopian HSTP-II targets (SRH 75%, Maternal 81%, EPI 90%, Child Health 85%, Nutrition 80%), highlighting gaps, underperforming domains, and successes across all selected categories.
-10. **Data Quality & Consistency Audit**
-11. **Mortality Alerts** (Strictly Maternal and Neonatal only)`;
+9. **Data Quality & Consistency Audit** (Checking over-reporting and related indicator logic)
+10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**: A dedicated section comparing overall zone/woreda performance against official national HSTP-II targets (CPR 50%, ANC4 81%, Skilled Delivery 76%, Pentavalent-3 85%, Full Vaccination 75%, Early PNC 76%, etc.). Analyze performance gaps clearly here.
+11. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full report with category-by-category HSTP-II benchmarking.` }
+        { role: "user", content: message || `Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.` }
       ],
       model: "openai/gpt-oss-20b",
       temperature: 0.3,
-      max_completion_tokens: 2500,
+      max_completion_tokens: 3000,
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
@@ -313,7 +320,7 @@ app.post('/api/export-docx', async (req, res) => {
                       size: 18 
                     })]
                   })],
-                  width: { size: 1800, type: WidthType.DXA },
+                  width: { size: 2000, type: WidthType.DXA },
                   shading: isHeader 
                     ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } 
                     : (rowIndex % 2 === 0 ? { fill: "F2F4F8", val: ShadingType.CLEAR, color: "auto" } : { fill: "FFFFFF", val: ShadingType.CLEAR, color: "auto" })
