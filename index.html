@@ -45,7 +45,7 @@
     .chat-container {
       display: flex;
       flex-direction: column;
-      height: 350px;
+      height: 380px;
       border: 1px solid var(--tg-theme-hint-color, #ccc);
       border-radius: 12px;
       overflow: hidden;
@@ -69,12 +69,11 @@
     .user-message {
       align-self: flex-end;
       background-color: var(--tg-theme-button-color, #2481cc);
-      color: var(--tg-theme-button-text-color, #ffffff);
+      color: #fff;
     }
     .bot-message {
       align-self: flex-start;
       background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
-      color: var(--tg-theme-text-color, #000000);
     }
     .input-area {
       display: flex;
@@ -87,27 +86,26 @@
       padding: 10px;
       border: 1px solid var(--tg-theme-hint-color, #ccc);
       border-radius: 8px;
-      outline: none;
-      background-color: var(--tg-theme-bg-color, #ffffff);
-      color: var(--tg-theme-text-color, #000000);
     }
     button {
       padding: 10px 16px;
       background-color: var(--tg-theme-button-color, #2481cc);
-      color: var(--tg-theme-button-text-color, #ffffff);
+      color: #fff;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       font-weight: bold;
+    }
+    .btn-docx {
+      background-color: #2b579a;
     }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>SWERHB Analytics Dashboard</h2>
+    <h2>SWERHB RMNCH Analytics Dashboard</h2>
     
-    <!-- Dynamic Filter Selectors -->
     <div class="filter-bar">
       <select id="zoneSelect">
         <option value="Grand Total">Grand Total (All Zones)</option>
@@ -125,11 +123,12 @@
     <h3>RMNCH AI Assistant</h3>
     <div class="chat-container">
       <div class="chat-box" id="chatBox">
-        <div class="message bot-message">Loading live zones and weeks from your sheet...</div>
+        <div class="message bot-message">Loading live zones and weeks...</div>
       </div>
       <div class="input-area">
-        <input type="text" id="userInput" placeholder="Ask about coverage or missing woredas..." onkeydown="if(event.key==='Enter') sendMessage()" />
+        <input type="text" id="userInput" placeholder="Ask a question or request analysis..." onkeydown="if(event.key==='Enter') sendMessage()" />
         <button id="sendBtn" onclick="sendMessage()">Analyze</button>
+        <button id="docxBtn" class="btn-docx" onclick="downloadDocx()" disabled>Download Word Report</button>
       </div>
     </div>
   </div>
@@ -138,7 +137,8 @@
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
 
-    // Fetch dynamic options on load
+    let lastReportText = "";
+
     async function loadFilters() {
       try {
         const res = await fetch('/api/filters');
@@ -147,7 +147,6 @@
         const zoneSelect = document.getElementById('zoneSelect');
         const weekSelect = document.getElementById('weekSelect');
 
-        // Populate Zones
         data.zones.forEach(zone => {
           const opt = document.createElement('option');
           opt.value = zone;
@@ -155,7 +154,6 @@
           zoneSelect.appendChild(opt);
         });
 
-        // Populate Weeks
         data.weeks.forEach(week => {
           const opt = document.createElement('option');
           opt.value = week;
@@ -163,7 +161,7 @@
           weekSelect.appendChild(opt);
         });
 
-        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Filters loaded from sheet! Select a Zone and Week above, then click Analyze.</div>';
+        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Select a Zone and Week above, then click Analyze.</div>';
       } catch (err) {
         console.error('Failed to load filters:', err);
       }
@@ -174,19 +172,21 @@
     async function sendMessage() {
       const inputEl = document.getElementById('userInput');
       const sendBtn = document.getElementById('sendBtn');
+      const docxBtn = document.getElementById('docxBtn');
       const chatBox = document.getElementById('chatBox');
       const zoneSelect = document.getElementById('zoneSelect');
       const weekSelect = document.getElementById('weekSelect');
 
-      const message = inputEl.value.trim() || `Generate full coverage summary and list missing woredas.`;
+      const message = inputEl.value.trim() || `Generate full RMNCH report.`;
 
       appendMessage(message, 'user-message');
       inputEl.value = '';
 
       inputEl.disabled = true;
       sendBtn.disabled = true;
+      docxBtn.disabled = true;
 
-      const loadingDiv = appendMessage('Reading live sheet data & calculating coverage...', 'bot-message');
+      const loadingDiv = appendMessage('Processing data and auditing Hepatitis BD & comparative performance...', 'bot-message');
 
       try {
         const user = tg?.initDataUnsafe?.user || {};
@@ -202,15 +202,42 @@
         });
 
         const data = await response.json();
-        loadingDiv.textContent = data.reply || 'No response received.';
+        lastReportText = data.reply || 'No report generated.';
+        loadingDiv.textContent = lastReportText;
+        docxBtn.disabled = false;
       } catch (err) {
-        loadingDiv.textContent = 'Error connecting to backend.';
+        loadingDiv.textContent = 'Error fetching analysis.';
       } finally {
         inputEl.disabled = false;
         sendBtn.disabled = false;
         inputEl.focus();
         chatBox.scrollTop = chatBox.scrollHeight;
       }
+    }
+
+    async function downloadDocx() {
+      if (!lastReportText) return;
+      
+      const zoneSelect = document.getElementById('zoneSelect');
+      const weekSelect = document.getElementById('weekSelect');
+      
+      const response = await fetch('/api/export-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportText: lastReportText,
+          title: `RMNCH Report - ${zoneSelect.value} (${weekSelect.value})`
+        })
+      });
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RMNCH_Report_${zoneSelect.value}_${weekSelect.value}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
 
     function appendMessage(text, className) {
