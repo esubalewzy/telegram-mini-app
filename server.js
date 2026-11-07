@@ -122,7 +122,7 @@ app.post('/api/chat', async (req, res) => {
 
     let weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
       const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
-      return `Week ${wk}:${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
+      return `Week ${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
     }).join(' | ');
 
     const headers = Object.keys(rawData[0] || {});
@@ -174,7 +174,7 @@ app.post('/api/chat', async (req, res) => {
         const hepBDVal = parseFloat(row[hepBDKey]) || 0;
         if (skilledVal > hepBDVal) {
           const missed = skilledVal - hepBDVal;
-          hepBDMissedWoredas.push(`${woredaName}:${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
+          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
         }
       }
 
@@ -187,4 +187,186 @@ app.post('/api/chat', async (req, res) => {
             const perfVal = parseFloat(row[performedKey]);
             const eligVal = parseFloat(row[header]);
             if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 6) {
-              qualityIssues.push(`[Over-reporting Error] ${woredaName} -${performedKey}: Per
+              qualityIssues.push(`[Over-reporting Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
+            }
+          }
+        }
+      });
+
+      const anc1Key = headers.find(h => h.includes('2.1') && !h.includes('Eligible') && !h.includes('Target'));
+      const anc4Key = headers.find(h => h.includes('2.3') && !h.includes('Eligible') && !h.includes('Target'));
+      if (anc1Key && anc4Key) {
+        const anc1 = parseFloat(row[anc1Key]) || 0;
+        const anc4 = parseFloat(row[anc4Key]) || 0;
+        if (anc4 > anc1 && qualityIssues.length < 8) {
+          qualityIssues.push(`[Logic Consistency Error] ${woredaName}: ANC4 visits (${anc4}) cannot exceed ANC1 visits (${anc1}).`);
+        }
+      }
+
+      headers.forEach(h => {
+        const lowerH = h.toLowerCase();
+        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && !h.includes('Eligible') && !h.includes('Target')) {
+          const deathVal = parseFloat(row[h]) || 0;
+          if (deathVal > 0) {
+            mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${deathVal} case(s) under [${h}].`);
+          }
+        }
+      });
+    });
+
+    let comparisonContext = '';
+    if (!selectedZone || selectedZone === 'Grand Total') {
+      let zoneStats = {};
+      rawData.forEach(r => {
+        const z = r.Zone || 'Unknown Zone';
+        if (!zoneStats[z]) zoneStats[z] = { total: 0, reported: 0 };
+        zoneStats[z].total++;
+        if (r.Report && r.Report.toLowerCase() === 'reported') zoneStats[z].reported++;
+      });
+      comparisonContext = `Zone vs Zone Comparison against Ethiopian HSTP-II targets: ${JSON.stringify(zoneStats)}`;
+    } else {
+      let woredaStats = filteredData.map(r => ({ woreda: r.Woreda, status: r.Report || 'Not Reported' }));
+      comparisonContext = `Woreda Performance in ${selectedZone} against Ethiopian HSTP-II targets: ${JSON.stringify(woredaStats)}`;
+    }
+
+    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, highly structured analytical report.
+
+Greeting Header (Must start with):
+"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${selectedZone || 'Grand Total'} Zone, Week ${selectedWeek || 'All Weeks'}"
+
+Data Context:
+- Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
+- Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
+- Multi-Week Trend Data: ${weeklyTrendSummary}
+- Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
+- Quality Issues: ${qualityIssues.join(' | ') || 'None'}
+- Mortality Alerts: ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
+- ${comparisonContext}
+
+Required Report Structure:
+1. **Reporting Rate Summary**
+2. **Multi-Week Reporting Trend Analysis**
+3. **Category 1: SRH Services** (Markdown Table format: | Indicator | Performed | Eligible | Coverage % |)
+4. **Category 2: Maternal Services** (Markdown Table format)
+5. **Category 3: EPI Services** (Markdown Table format)
+6. **Category 4: Child Health Service** (Markdown Table format)
+7. **Category 5: Nutrition** (Markdown Table format)
+8. **Hepatitis BD Birth Dose Missed Woredas Audit**
+9. **Comparative Benchmarking vs. Ethiopian HSTP-II Guidelines**
+10. **Data Quality & Consistency Audit**
+11. **Mortality Alerts** (Strictly Maternal and Neonatal only)`;
+
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message || `Generate full report.` }
+      ],
+      model: "openai/gpt-oss-20b",
+      temperature: 0.3,
+      max_completion_tokens: 2500,
+    });
+
+    const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
+    res.json({ reply: responseText });
+
+  } catch (error) {
+    console.error('Groq/Sheet Error Details:', error);
+    res.status(500).json({ reply: 'Error generating report. Please try again.' });
+  }
+});
+
+app.post('/api/export-docx', async (req, res) => {
+  try {
+    const { reportText, title } = req.body;
+    const lines = reportText.split('\n');
+    const docChildren = [
+      new Paragraph({
+        text: title || "This Is Weekly Essential RMNCH Service Report Feedback",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 200 }
+      })
+    ];
+
+    let i = 0;
+    while (i < lines.length) {
+      let line = lines[i].trim();
+
+      if (line.startsWith('|') && line.endsWith('|')) {
+        let tableRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          let rowLine = lines[i].trim();
+          if (!rowLine.includes('---')) {
+            let cells = rowLine.split('|').filter(c => c !== '').map(c => c.trim());
+            tableRows.push(cells);
+          }
+          i++;
+        }
+
+        if (tableRows.length > 0) {
+          const docTableRows = tableRows.map((rowCells, rowIndex) => {
+            const isHeader = rowIndex === 0;
+            return new TableRow({
+              children: rowCells.map(cellText => {
+                return new TableCell({
+                  children: [new Paragraph({
+                    alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
+                    children: [new TextRun({ 
+                      text: cellText, 
+                      bold: isHeader,
+                      color: isHeader ? "FFFFFF" : "000000",
+                      size: 20 
+                    })]
+                  })],
+                  width: { size: 2000, type: WidthType.DXA },
+                  shading: isHeader 
+                    ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } 
+                    : (rowIndex % 2 === 0 ? { fill: "F2F4F8", val: ShadingType.CLEAR, color: "auto" } : { fill: "FFFFFF", val: ShadingType.CLEAR, color: "auto" })
+                });
+              })
+            });
+          });
+
+          docChildren.push(new Table({
+            rows: docTableRows,
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 6, color: "1F4E78" },
+              bottom: { style: BorderStyle.SINGLE, size: 6, color: "1F4E78" },
+              left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "D3D3D3" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "D3D3D3" },
+            }
+          }));
+          docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
+        }
+      } else {
+        if (line !== '') {
+          docChildren.push(new Paragraph({
+            children: [new TextRun({ text: lines[i], size: 22 })],
+            spacing: { after: 100 }
+          }));
+        }
+        i++;
+      }
+    }
+
+    const doc = new Document({
+      sections: [{ properties: {}, children: docChildren }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Service_Report_Feedback.docx');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Docx Export Error:', err);
+    res.status(500).json({ error: 'Failed to generate Word document.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
