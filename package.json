@@ -1,6 +1,8 @@
+
 {
-  "name": "telegram-looker-ai-app",
+  "name": "telegram-mini-app-rmnch",
   "version": "1.0.0",
+  "description": "Telegram Mini App with Groq RMNCH Analytics",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -13,3 +15,4 @@
     "docx": "^9.0.3",
     "node-cron": "^3.0.3"
   }
+}
