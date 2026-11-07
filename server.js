@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
-import docx from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
 
 const __filename = fileURLToPath(import.meta.url);
