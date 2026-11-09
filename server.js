@@ -400,7 +400,7 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-// Main email dispatch function using Resend
+// Main email dispatch function using Resend with integrated debugging
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution...`);
 
@@ -415,7 +415,6 @@ async function runRmnchEmailDispatch() {
     console.log(`[Dispatch] Active reporting week targeted: "${currentWeek}"`);
 
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
-    const dayOfWeek = new Date().getDay();
 
     const zonalEmails = {
       "Kaffa": "kaffa.coordinator@swerhb.gov.et",
@@ -427,7 +426,7 @@ async function runRmnchEmailDispatch() {
     };
 
     const regionalEmails = [
-      "esubalewzerihun11@gmail.com",
+      "esubalewzerihun37@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
@@ -463,13 +462,18 @@ async function runRmnchEmailDispatch() {
                       `Non-Reporting Woredas: ${nonReporting}\n` +
                       `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}`;
 
-      await resend.emails.send({
+      const response = await resend.emails.send({
         from: 'RMNCH System <onboarding@resend.dev>',
         to: recipientEmail,
         subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (${currentWeek})`,
         text: zonalBody
       });
-      console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator.`);
+      
+      if (response.error) {
+        console.error(`❌ [Resend Error for ${zone}]:`, response.error);
+      } else {
+        console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator. ID: ${response.data?.id}`);
+      }
     }
 
     // 2. Send Grand Total Regional Report via Resend
@@ -498,14 +502,19 @@ async function runRmnchEmailDispatch() {
                        `Non-Reporting Woredas Across Region: ${regNonReporting}\n` +
                        `Regional Maternal & Neonatal Deaths: ${regDeaths.join(' | ') || 'Zero maternal or neonatal deaths recorded across the region.'}`;
 
-    await resend.emails.send({
+    const regResponse = await resend.emails.send({
       from: 'RMNCH System <onboarding@resend.dev>',
       to: regionalEmails,
       subject: `[Grand Total] Regional RMNCH Service Report Feedback - ${currentWeek}`,
       text: regionalBody
     });
 
-    console.log(`[Resend] Sent Regional Grand Total ${currentWeek} report to Regional Leadership.`);
+    if (regResponse.error) {
+      console.error(`❌ [Resend Error for Regional Leadership]:`, regResponse.error);
+    } else {
+      console.log(`[Resend] Sent Regional Grand Total ${currentWeek} report to Regional Leadership. ID: ${regResponse.data?.id}`);
+    }
+
     return true;
   } catch (err) {
     console.error('Error in automated email dispatch via Resend:', err);
@@ -523,34 +532,13 @@ app.get('/api/test-email', async (req, res) => {
   }
 });
 
-// Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC (5:35 PM EAT)
-cron.schedule('43 20 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 20:43
+cron.schedule('46 20 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
-
-
-
-const response = await resend.emails.send({
-        from: 'RMNCH System <onboarding@resend.dev>',
-        to: recipientEmail,
-        subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (${currentWeek})`,
-        text: zonalBody
-      });
-      
-      // Add this debug check
-      if (response.error) {
-        console.error(`❌ [Resend Error for ${zone}]:`, response.error);
-      } else {
-        console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator. ID: ${response.data?.id}`);
-      }
-
 
 // Start Server (Must be at the very bottom)
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-
-
-
