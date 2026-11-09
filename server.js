@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
+import cron from 'node-cron';
+import { Resend } from 'resend';
 import { 
   Document, Packer, Paragraph, TextRun, HeadingLevel, 
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, AlignmentType 
@@ -14,11 +16,11 @@ const app = express();
 app.use(express.json());
 app.use(express.static(__dirname));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+const PORT = process.env.PORT || 3000;
 
+// Initialize Groq & Resend
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const resend = new Resend(process.env.RESEND_API_KEY || process.env.EMAIL_PASS);
 
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
@@ -69,6 +71,37 @@ async function fetchFinalSheetData() {
     throw err;
   }
 }
+
+// Automatically determine active reporting week starting from Week 19 today and advancing weekly
+function getCurrentReportingWeek(rawData) {
+  const baseDate = new Date('2026-11-09'); // Week 19 starts today (Nov 9, 2026)
+  const baseWeekNumber = 19;
+  
+  const currentDate = new Date();
+  const diffTime = currentDate - baseDate;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const diffWeeks = Math.floor(diffDays / 7);
+  
+  const calculatedWeekNum = baseWeekNumber + Math.max(0, diffWeeks);
+  const targetWeekQuery = `Week ${calculatedWeekNum}`;
+
+  const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
+  const matchedWeek = availableWeeks.find(w => w.toLowerCase().includes(targetWeekQuery.toLowerCase()));
+
+  if (matchedWeek) {
+    return matchedWeek;
+  }
+  return availableWeeks[availableWeeks.length - 1];
+}
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Health check endpoint for UptimeRobot keep-alive
+app.get('/health', (req, res) => {
+  res.status(200).send('OK - Server is awake');
+});
 
 app.get('/api/filters', async (req, res) => {
   try {
@@ -160,7 +193,6 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Official Ethiopian HSTP-II National Targets (2020/21 - 2024/25)
     const hstp2OfficialTargets = {
       maternalAndReproductive: {
         "Contraceptive Prevalence Rate (CPR)": "50%",
@@ -255,8 +287,8 @@ Required Report Structure:
 6. **Category 4: Child Health Service** (Table format: | Indicator | Performed | Eligible | Coverage % |)
 7. **Category 5: Nutrition** (Table format: | Indicator | Performed | Eligible | Coverage % |)
 8. **Hepatitis BD Birth Dose Missed Woredas Audit**
-9. **Data Quality & Consistency Audit** (Checking over-reporting and related indicator logic)
-10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**: A dedicated section comparing overall zone/woreda performance against official national HSTP-II targets (CPR 50%, ANC4 81%, Skilled Delivery 76%, Pentavalent-3 85%, Full Vaccination 75%, Early PNC 76%, etc.). Analyze performance gaps clearly here.
+9. **Data Quality & Consistency Audit**
+10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**
 11. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
 
     const chatCompletion = await groq.chat.completions.create({
@@ -368,56 +400,7 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}); 
-// Add this near your other routes in server.js
-app.get('/health', (req, res) => {
-  res.status(200).send('OK - Server is awake');
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import cron from 'node-cron';
-import { Resend } from 'resend';
-
-// Initialize Resend with your environment variable (Add RESEND_API_KEY in Render Dashboard)
-const resend = new Resend(process.env.EMAIL_PASS || process.env.RESEND_API_KEY);
-
-// Automatically determine active reporting week starting from Week 19 today and advancing weekly
-function getCurrentReportingWeek(rawData) {
-  const baseDate = new Date('2026-11-09'); // Week 19 starts today (Nov 9, 2026)
-  const baseWeekNumber = 19;
-  
-  const currentDate = new Date();
-  const diffTime = currentDate - baseDate;
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  const diffWeeks = Math.floor(diffDays / 7);
-  
-  const calculatedWeekNum = baseWeekNumber + Math.max(0, diffWeeks);
-  const targetWeekQuery = `Week ${calculatedWeekNum}`;
-
-  const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
-  const matchedWeek = availableWeeks.find(w => w.toLowerCase().includes(targetWeekQuery.toLowerCase()));
-
-  if (matchedWeek) {
-    return matchedWeek;
-  }
-  return availableWeeks[availableWeeks.length - 1];
-}
-
+// Main email dispatch function using Resend
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution...`);
 
@@ -546,14 +529,7 @@ cron.schedule('35 14 * * 1,2,3', async () => {
   await runRmnchEmailDispatch();
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-
-
-
-// TEMPORARY: Run the automated email dispatch once in 10 minutes (600,000 milliseconds) for testing
+// TEMPORARY: Run the automated email dispatch once in 10 minutes for testing
 setTimeout(async () => {
   console.log('[TEST TIMER] 10 minutes elapsed. Triggering automated email dispatch test...');
   try {
@@ -563,3 +539,8 @@ setTimeout(async () => {
     console.error('[TEST TIMER] Automated test dispatch failed:', err);
   }
 }, 10 * 60 * 1000);
+
+// Start Server (Must be at the very bottom)
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
