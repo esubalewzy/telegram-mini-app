@@ -417,17 +417,17 @@ async function runRmnchEmailDispatch() {
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
 
     const zonalEmails = {
-      "Kaffa": "kaffa.coordinator@swerhb.gov.et",
-      "Dawro": "dawro.coordinator@swerhb.gov.et",
-      "West Omo": "westomo.coordinator@swerhb.gov.et",
-      "Bench Sheko": "benchsheko.coordinator@swerhb.gov.et",
-      "Sheka": "sheka.coordinator@swerhb.gov.et",
-      "Konta": "konta.coordinator@swerhb.gov.et"
+      "Kaffa": "esubalewzerihun11@gmail.com",
+      "Dawro": "esubalewzerihun11@gmail.com",
+      "West Omo": "esubalewzerihun11@gmail.com",
+      "Bench Sheko": "esubalewzerihun11@gmail.com",
+      "Sheka": "esubalewzerihun11@gmail.com",
+      "Konta": "esubalewzerihun11@gmail.com"
     };
 
     const regionalEmails = [
       "esubalewzerihun11@gmail.com",
-      "regional.coordinator@swerhb.gov.et"
+      "esubalewzerihun11@gmail.com"
     ];
 
     // 1. Send Individualized Zonal Reports via Resend
@@ -533,7 +533,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 20:43
-cron.schedule('49 20 * * 1,2,3', async () => {
+cron.schedule('55 20 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
