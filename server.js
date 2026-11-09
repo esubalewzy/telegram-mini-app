@@ -321,7 +321,7 @@ async function sendViaBrevo(toEmail, subject, textBody) {
     method: 'POST',
     headers: {
       'accept': 'application/json',
-      'api-key': BREVO,
+      'api-key': BREVO_API_KEY,
       'content-type': 'application/json'
     },
     body: JSON.stringify({
@@ -456,7 +456,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 20:55 UTC
-cron.schedule('45 21 * * 1,2,3', async () => {
+cron.schedule('50 21 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
