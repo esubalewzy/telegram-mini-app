@@ -394,8 +394,8 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Scheduled Cron Job: Runs every Monday, Tuesday, and Wednesday at 5:30 PM (17:30)
-cron.schedule('30 17 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs every Monday, Tuesday, and Wednesday at 5:35 PM (17:35)
+cron.schedule('35 17 * * 1,2,3', async () => {
   const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
   console.log(`[CRON] Running RMNCH automated email dispatch. Day of week: ${dayOfWeek}`);
 
