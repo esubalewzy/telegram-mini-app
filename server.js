@@ -426,8 +426,8 @@ async function runRmnchEmailDispatch() {
     };
 
     const regionalEmails = [
-      "esubalewzerihun11@gmail.com",
-      "esubalewzerihun11@gmail.com"
+      "esubalewzerihun37@gmail.com",
+      "esubalewzerihun37@gmail.com"
     ];
 
     // 1. Send Individualized Zonal Reports via Resend
@@ -533,7 +533,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 20:43
-cron.schedule('55 20 * * 1,2,3', async () => {
+cron.schedule('08 21 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
