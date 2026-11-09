@@ -524,21 +524,12 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC (5:35 PM EAT)
-cron.schedule('35 14 * * 1,2,3', async () => {
+cron.schedule('25 20 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
 
-// TEMPORARY: Run the automated email dispatch once in 10 minutes for testing
-setTimeout(async () => {
-  console.log('[TEST TIMER] 10 minutes elapsed. Triggering automated email dispatch test...');
-  try {
-    await runRmnchEmailDispatch();
-    console.log('[TEST TIMER] Automated test dispatch completed successfully!');
-  } catch (err) {
-    console.error('[TEST TIMER] Automated test dispatch failed:', err);
-  }
-}, 10 * 60 * 1000);
+
 
 // Start Server (Must be at the very bottom)
 app.listen(PORT, () => {
