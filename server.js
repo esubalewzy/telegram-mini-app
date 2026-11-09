@@ -383,7 +383,7 @@ app.listen(PORT, () => {
 
 
 
-  import cron from 'node-cron';
+ import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
@@ -394,28 +394,28 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Scheduled Cron Job: Runs every Monday, Tuesday, and Wednesday at 5:35 PM (17:35)
-cron.schedule('35 17 * * 1,2,3', async () => {
-  const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
-  console.log(`[CRON] Running RMNCH automated email dispatch. Day of week: ${dayOfWeek}`);
+// Reusable function containing all your email logic so it can be run by Cron OR manually
+async function runRmnchEmailDispatch() {
+  console.log(`[RMNCH Email Dispatch] Starting execution...`);
 
   try {
     const rawData = await fetchFinalSheetData();
     if (!rawData || rawData.length === 0) {
-      console.log('[CRON] No data found in Google Sheet.');
+      console.log('[Dispatch] No data found in Google Sheet.');
       return;
     }
 
-    // Automatically detect all unique weeks present in your Google Sheet (e.g., "19", "20", etc.)
-    // We sort them to find the latest active reporting week
     const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
-    if (availableWeeks.length === 0) return;
+    if (availableWeeks.length === 0) {
+      console.log('[Dispatch] No valid weeks found in data.');
+      return;
+    }
     
-    // Select the latest week present in the sheet
     const currentWeek = availableWeeks[availableWeeks.length - 1];
-    console.log(`[CRON] Active reporting week detected from Sheet data: Week ${currentWeek}`);
+    console.log(`[Dispatch] Active reporting week detected: Week ${currentWeek}`);
 
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
+    const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
     const zonalEmails = {
       "Kaffa": "kaffa.coordinator@swerhb.gov.et",
@@ -426,14 +426,13 @@ cron.schedule('35 17 * * 1,2,3', async () => {
       "Konta": "konta.coordinator@swerhb.gov.et"
     };
 
+    // Corrected to your active email address
     const regionalEmails = [
       "esubalewzerihun37@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
-    // ==========================================
     // 1. Send Individualized Zonal Reports
-    // ==========================================
     for (const zone of zones) {
       const recipientEmail = zonalEmails[zone];
       if (!recipientEmail) continue;
@@ -484,9 +483,7 @@ cron.schedule('35 17 * * 1,2,3', async () => {
       console.log(`[Auto-Email] Sent Week ${currentWeek} report to ${zone} coordinator.`);
     }
 
-    // ==========================================
     // 2. Send Grand Total Regional Report
-    // ==========================================
     const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim() === currentWeek);
     const regTotalExpected = regionalData.length;
     const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
@@ -531,8 +528,25 @@ cron.schedule('35 17 * * 1,2,3', async () => {
     });
 
     console.log(`[Auto-Email] Sent Regional Grand Total Week ${currentWeek} report to Regional Leadership.`);
-
+    return true;
   } catch (err) {
-    console.error('Error in automated email dispatch cron job:', err);
+    console.error('Error in automated email dispatch:', err);
+    throw err;
+  }
+}
+
+// Scheduled Cron Job (Note: Render is in UTC. If you want 5:35 PM EAT, use UTC time 14:35)
+cron.schedule('35 14 * * 1,2,3', async () => {
+  console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
+  await runRmnchEmailDispatch();
+});
+
+// INSTANT TEST ENDPOINT: Visit your-app.onrender.com/api/test-email in your browser to fire it right now!
+app.get('/api/test-email', async (req, res) => {
+  try {
+    await runRmnchEmailDispatch();
+    res.send('RMNCH email dispatch executed successfully! Check your inbox (esubalewzerihun11@gmail.com).');
+  } catch (err) {
+    res.status(500).send('Error executing email dispatch: ' + err.message);
   }
 });
