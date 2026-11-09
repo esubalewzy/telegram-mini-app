@@ -394,27 +394,29 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-function getCurrentReportingWeek() {
-  const baseDate = new Date('2026-11-09'); // Week 19 starts Monday, Nov 9, 2026
-  const baseWeekNumber = 19;
-  const currentDate = new Date();
-  const diffTime = currentDate - baseDate;
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  const diffWeeks = Math.floor(diffDays / 7);
-  return baseWeekNumber + Math.max(0, diffWeeks);
-}
-
-// Scheduled Cron Job: Every Monday, Tuesday, and Wednesday at 1:30 PM (13:30)
-cron.schedule('30 13 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs every Monday, Tuesday, and Wednesday at 5:30 PM (17:30)
+cron.schedule('30 17 * * 1,2,3', async () => {
   const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
-  const currentWeek = getCurrentReportingWeek();
-  console.log(`[CRON] Running RMNCH email dispatch for Week ${currentWeek}, Day ${dayOfWeek}`);
+  console.log(`[CRON] Running RMNCH automated email dispatch. Day of week: ${dayOfWeek}`);
 
   try {
     const rawData = await fetchFinalSheetData();
+    if (!rawData || rawData.length === 0) {
+      console.log('[CRON] No data found in Google Sheet.');
+      return;
+    }
+
+    // Automatically detect all unique weeks present in your Google Sheet (e.g., "19", "20", etc.)
+    // We sort them to find the latest active reporting week
+    const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
+    if (availableWeeks.length === 0) return;
+    
+    // Select the latest week present in the sheet
+    const currentWeek = availableWeeks[availableWeeks.length - 1];
+    console.log(`[CRON] Active reporting week detected from Sheet data: Week ${currentWeek}`);
+
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
 
-    // Email directories
     const zonalEmails = {
       "Kaffa": "kaffa.coordinator@swerhb.gov.et",
       "Dawro": "dawro.coordinator@swerhb.gov.et",
@@ -425,7 +427,7 @@ cron.schedule('30 13 * * 1,2,3', async () => {
     };
 
     const regionalEmails = [
-      "esubalewzerihun37@gmail.com",
+      "regional.director@swerhb.gov.et",
       "regional.coordinator@swerhb.gov.et"
     ];
 
@@ -438,7 +440,7 @@ cron.schedule('30 13 * * 1,2,3', async () => {
 
       const zoneData = rawData.filter(r => 
         r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
-        r.Week && r.Week.includes(currentWeek.toString())
+        r.Week && r.Week.toString().trim() === currentWeek
       );
 
       const totalExpected = zoneData.length;
@@ -485,7 +487,7 @@ cron.schedule('30 13 * * 1,2,3', async () => {
     // ==========================================
     // 2. Send Grand Total Regional Report
     // ==========================================
-    const regionalData = rawData.filter(r => r.Week && r.Week.includes(currentWeek.toString()));
+    const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim() === currentWeek);
     const regTotalExpected = regionalData.length;
     const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
     const regReportingRateVal = regTotalExpected > 0 ? (regReported.length / regTotalExpected) * 100 : 0;
@@ -521,10 +523,9 @@ cron.schedule('30 13 * * 1,2,3', async () => {
                      `Note: Final comprehensive report will be dispatched on Wednesday or when 100% regional reporting is achieved.`;
     }
 
-    // Send to both Regional Director & Coordinator
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
-      to: regionalEmails.join(','), // Sends to all regional leadership emails
+      to: regionalEmails.join(','),
       subject: `[Grand Total] Regional RMNCH Service Report Feedback - Week ${currentWeek}`,
       text: regionalBody
     });
