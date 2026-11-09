@@ -383,11 +383,37 @@ app.get('/health', (req, res) => {
 
 
 
+import express from 'express';
+import cron from 'node-cron';
+import { Resend } from 'resend';
 
-iimport { Resend } from 'resend';
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Initialize Resend with your environment variable
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend with your environment variable (Add RESEND_API_KEY in Render Dashboard)
+const resend = new Resend(process.env.EMAIL_PASS || process.env.RESEND_API_KEY);
+
+// Automatically determine active reporting week starting from Week 19 today and advancing weekly
+function getCurrentReportingWeek(rawData) {
+  const baseDate = new Date('2026-11-09'); // Week 19 starts today (Nov 9, 2026)
+  const baseWeekNumber = 19;
+  
+  const currentDate = new Date();
+  const diffTime = currentDate - baseDate;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const diffWeeks = Math.floor(diffDays / 7);
+  
+  const calculatedWeekNum = baseWeekNumber + Math.max(0, diffWeeks);
+  const targetWeekQuery = `Week ${calculatedWeekNum}`;
+
+  const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
+  const matchedWeek = availableWeeks.find(w => w.toLowerCase().includes(targetWeekQuery.toLowerCase()));
+
+  if (matchedWeek) {
+    return matchedWeek;
+  }
+  return availableWeeks[availableWeeks.length - 1];
+}
 
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution...`);
@@ -399,7 +425,6 @@ async function runRmnchEmailDispatch() {
       return;
     }
 
-    // Automatically calculated week progression (targeting Week 19 and moving forward weekly)
     const currentWeek = getCurrentReportingWeek(rawData);
     console.log(`[Dispatch] Active reporting week targeted: "${currentWeek}"`);
 
@@ -476,7 +501,7 @@ async function runRmnchEmailDispatch() {
       Object.keys(r).forEach(h => {
         const lowerH = h.toLowerCase();
         if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-          regDeaths.push(`${r['Zone']} / ${r['Woreda']}: https://www.youtube.com/watch?v=Ou-oIaK4QeI = ${r[h]}`);
+          regDeaths.push(`${r['Zone']} / ${r['Woreda']}: ${h} = ${r[h]}`);
         }
       });
     });
@@ -502,6 +527,25 @@ async function runRmnchEmailDispatch() {
   }
 }
 
+// Instant test endpoint
+app.get('/api/test-email', async (req, res) => {
+  try {
+    await runRmnchEmailDispatch();
+    res.send('RMNCH email dispatch executed successfully via Resend!');
+  } catch (err) {
+    res.status(500).send('Error executing email dispatch: ' + err.message);
+  }
+});
+
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC (5:35 PM EAT)
+cron.schedule('35 14 * * 1,2,3', async () => {
+  console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
+  await runRmnchEmailDispatch();
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
 
 
 
