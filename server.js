@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Groq from 'groq-sdk';
 import cron from 'node-cron';
-import { Resend } from 'resend';
 import { 
   Document, Packer, Paragraph, TextRun, HeadingLevel, 
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, AlignmentType 
@@ -18,9 +17,9 @@ app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Groq & Resend
+// Initialize Groq
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const resend = new Resend(process.env.RESEND_API_KEY || process.env.EMAIL_PASS);
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
@@ -74,7 +73,7 @@ async function fetchFinalSheetData() {
 
 // Automatically determine active reporting week starting from Week 19 today and advancing weekly
 function getCurrentReportingWeek(rawData) {
-  const baseDate = new Date('2026-11-09'); // Week 19 starts today (Nov 9, 2026)
+  const baseDate = new Date('2026-11-09'); // Week 19 start anchor
   const baseWeekNumber = 19;
   
   const currentDate = new Date();
@@ -114,10 +113,52 @@ app.get('/api/filters', async (req, res) => {
   }
 });
 
+// Helper to generate AI comprehensive analysis using Groq
+async function generateAiReport(zoneName, filteredData, reportingRate, nonReportingWoredas, weeklyTrendSummary, categorizedIndicators, hstp2OfficialTargets, qualityIssues, hepBDMissedWoredas, mortalityAlerts, currentWeek) {
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, exhaustive analytical report without truncating any categories.
+
+Greeting Header (Must start with exactly):
+"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName} Zone, Week ${currentWeek}"
+
+Data Context:
+- Reporting Rate: ${reportingRate}
+- Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
+- Multi-Week Reporting Trend: ${weeklyTrendSummary}
+- Complete Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Official Ethiopian HSTP-II Targets: ${JSON.stringify(hstp2OfficialTargets)}
+- Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
+- Consistency & Data Quality Issues: ${qualityIssues.join(' | ') || 'None'}
+- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
+
+Required Report Structure:
+1. **Reporting Rate Summary**
+2. **Multi-Week Reporting Trend Analysis**
+3. **Category 1: SRH Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+4. **Category 2: Maternal Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+5. **Category 3: EPI Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+6. **Category 4: Child Health Service** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+7. **Category 5: Nutrition** (Table format: | Indicator | Performed | Eligible | Coverage % |)
+8. **Hepatitis BD Birth Dose Missed Woredas Audit**
+9. **Data Quality & Consistency Audit**
+10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**
+11. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
+
+  const chatCompletion = await groq.chat.completions.create({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Generate full individualized report for ${zoneName}.` }
+    ],
+    model: "openai/gpt-oss-20b",
+    temperature: 0.3,
+    max_completion_tokens: 3000,
+  });
+
+  return chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
+}
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, selectedZone, selectedWeek } = req.body;
-
     const rawData = await fetchFinalSheetData();
     if (rawData.length === 0) {
       return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
@@ -144,13 +185,9 @@ app.post('/api/chat', async (req, res) => {
 
     zoneAllData.forEach(r => {
       const wk = r.Week || 'Unknown Week';
-      if (!weeklyTrends[wk]) {
-        weeklyTrends[wk] = { totalExpected: 0, reportedCount: 0 };
-      }
+      if (!weeklyTrends[wk]) weeklyTrends[wk] = { totalExpected: 0, reportedCount: 0 };
       weeklyTrends[wk].totalExpected++;
-      if (r.Report && r.Report.toLowerCase() === 'reported') {
-        weeklyTrends[wk].reportedCount++;
-      }
+      if (r.Report && r.Report.toLowerCase() === 'reported') weeklyTrends[wk].reportedCount++;
     });
 
     let weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
@@ -159,28 +196,19 @@ app.post('/api/chat', async (req, res) => {
     }).join(' | ');
 
     const headers = Object.keys(rawData[0] || {});
-    let categorizedIndicators = {
-      cat1_srh: [],
-      cat2_maternal: [],
-      cat3_epi: [],
-      cat4_child: [],
-      cat5_nutrition: []
-    };
+    let categorizedIndicators = { cat1_srh: [], cat2_maternal: [], cat3_epi: [], cat4_child: [], cat5_nutrition: [] };
 
     headers.forEach(header => {
       if (header.includes('Eligible')) {
         const baseName = header.replace('Eligible', '').trim();
         const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
-        
         if (performedKey) {
           let totalPerformed = 0;
           let totalEligible = 0;
-
           filteredData.forEach(row => {
             totalPerformed += parseFloat(row[performedKey]) || 0;
             totalEligible += parseFloat(row[header]) || 0;
           });
-
           const coverageNum = totalEligible > 0 ? parseFloat(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
           const indicatorEntry = { name: performedKey, performed: totalPerformed, eligible: totalEligible, coverage: coverageNum + '%' };
 
@@ -194,19 +222,8 @@ app.post('/api/chat', async (req, res) => {
     });
 
     const hstp2OfficialTargets = {
-      maternalAndReproductive: {
-        "Contraceptive Prevalence Rate (CPR)": "50%",
-        "ANC 4 Visits": "81%",
-        "Skilled Delivery Attendance": "76%",
-        "Early PNC within 2 days": "76%"
-      },
-      childHealthAndEpi: {
-        "Pentavalent-3 Coverage": "85%",
-        "Full Vaccination Coverage": "75%",
-        "MCV2 (Second dose measles)": "80%",
-        "Treatment of Pneumonia (Under-5)": "69%",
-        "Treatment of Diarrhea with ORS & Zinc": "67%"
-      }
+      maternalAndReproductive: { "CPR": "50%", "ANC 4 Visits": "81%", "Skilled Delivery": "76%", "Early PNC": "76%" },
+      childHealthAndEpi: { "Pentavalent-3": "85%", "Full Vaccination": "75%", "MCV2": "80%" }
     };
 
     const qualityIssues = [];
@@ -215,95 +232,20 @@ app.post('/api/chat', async (req, res) => {
 
     filteredData.forEach(row => {
       const woredaName = row['Woreda'] || 'Unknown Woreda';
-
-      const skilledKey = headers.find(h => h.includes('2.7') && !h.includes('Eligible') && !h.includes('Target'));
-      const hepBDKey = headers.find(h => h.includes('3.3') && !h.includes('Eligible') && !h.includes('Target'));
-      if (skilledKey && hepBDKey) {
-        const skilledVal = parseFloat(row[skilledKey]) || 0;
-        const hepBDVal = parseFloat(row[hepBDKey]) || 0;
-        if (skilledVal > hepBDVal) {
-          const missed = skilledVal - hepBDVal;
-          hepBDMissedWoredas.push(`${woredaName}: ${skilledVal} skilled births vs ${hepBDVal} HepBD doses (${missed} missed)`);
-        }
-      }
-
-      headers.forEach(header => {
-        if (header.includes('Eligible')) {
-          const baseName = header.replace('Eligible', '').trim();
-          const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
-          
-          if (performedKey) {
-            const perfVal = parseFloat(row[performedKey]);
-            const eligVal = parseFloat(row[header]);
-            if (!isNaN(perfVal) && !isNaN(eligVal) && eligVal > 0 && perfVal > eligVal && qualityIssues.length < 6) {
-              qualityIssues.push(`[Over-reporting Error] ${woredaName} - ${performedKey}: Performed (${perfVal}) exceeds Eligible pool (${eligVal}).`);
-            }
-          }
-        }
-      });
-
-      const anc1Key = headers.find(h => h.includes('2.1') && !h.includes('Eligible') && !h.includes('Target'));
-      const anc4Key = headers.find(h => h.includes('2.3') && !h.includes('Eligible') && !h.includes('Target'));
-      if (anc1Key && anc4Key) {
-        const anc1 = parseFloat(row[anc1Key]) || 0;
-        const anc4 = parseFloat(row[anc4Key]) || 0;
-        if (anc4 > anc1 && qualityIssues.length < 8) {
-          qualityIssues.push(`[Logic Consistency Error] ${woredaName}: ANC4 visits (${anc4}) cannot exceed ANC1 visits (${anc1}).`);
-        }
-      }
-
       headers.forEach(h => {
         const lowerH = h.toLowerCase();
-        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && !h.includes('Eligible') && !h.includes('Target')) {
-          const deathVal = parseFloat(row[h]) || 0;
-          if (deathVal > 0) {
-            mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${deathVal} case(s) under [${h}].`);
-          }
+        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
+          mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
         }
       });
     });
 
-    const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, exhaustive analytical report without truncating any categories.
+    const responseText = await generateAiReport(
+      selectedZone || 'Grand Total', filteredData, reportingRate, nonReportingWoredas, 
+      weeklyTrendSummary, categorizedIndicators, hstp2OfficialTargets, qualityIssues, hepBDMissedWoredas, mortalityAlerts, selectedWeek || 'Current Week'
+    );
 
-Greeting Header (Must start with exactly):
-"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${selectedZone || 'Grand Total'} Zone, Week ${selectedWeek || 'All Weeks'}"
-
-Data Context:
-- Reporting Rate: ${reportingRate} (${reportingWoredas.length}/${totalExpectedWoredas})
-- Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
-- Multi-Week Reporting Trend: ${weeklyTrendSummary}
-- Complete Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Official Ethiopian HSTP-II Targets: ${JSON.stringify(hstp2OfficialTargets)}
-- Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
-- Consistency & Data Quality Issues: ${qualityIssues.join(' | ') || 'None'}
-- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
-
-Required Report Structure:
-1. **Reporting Rate Summary**
-2. **Multi-Week Reporting Trend Analysis**
-3. **Category 1: SRH Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-4. **Category 2: Maternal Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-5. **Category 3: EPI Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-6. **Category 4: Child Health Service** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-7. **Category 5: Nutrition** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-8. **Hepatitis BD Birth Dose Missed Woredas Audit**
-9. **Data Quality & Consistency Audit**
-10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**
-11. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
-
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message || `Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.` }
-      ],
-      model: "openai/gpt-oss-20b",
-      temperature: 0.3,
-      max_completion_tokens: 3000,
-    });
-
-    const responseText = chatCompletion.choices[0]?.message?.content || 'No response generated.';
     res.json({ reply: responseText });
-
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
     res.status(500).json({ reply: 'Error generating report. Please try again.' });
@@ -325,7 +267,6 @@ app.post('/api/export-docx', async (req, res) => {
     let i = 0;
     while (i < lines.length) {
       let line = lines[i].trim();
-
       if (line.startsWith('|') && line.endsWith('|')) {
         let tableRows = [];
         while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
@@ -336,7 +277,6 @@ app.post('/api/export-docx', async (req, res) => {
           }
           i++;
         }
-
         if (tableRows.length > 0) {
           const docTableRows = tableRows.map((rowCells, rowIndex) => {
             const isHeader = rowIndex === 0;
@@ -345,51 +285,26 @@ app.post('/api/export-docx', async (req, res) => {
                 return new TableCell({
                   children: [new Paragraph({
                     alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
-                    children: [new TextRun({ 
-                      text: cellText, 
-                      bold: isHeader,
-                      color: isHeader ? "FFFFFF" : "000000",
-                      size: 18 
-                    })]
+                    children: [new TextRun({ text: cellText, bold: isHeader, color: isHeader ? "FFFFFF" : "000000", size: 18 })]
                   })],
                   width: { size: 2000, type: WidthType.DXA },
-                  shading: isHeader 
-                    ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } 
-                    : (rowIndex % 2 === 0 ? { fill: "F2F4F8", val: ShadingType.CLEAR, color: "auto" } : { fill: "FFFFFF", val: ShadingType.CLEAR, color: "auto" })
+                  shading: isHeader ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } : { fill: rowIndex % 2 === 0 ? "F2F4F8" : "FFFFFF", val: ShadingType.CLEAR, color: "auto" }
                 });
               })
             });
           });
-
-          docChildren.push(new Table({
-            rows: docTableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 6, color: "1F4E78" },
-              bottom: { style: BorderStyle.SINGLE, size: 6, color: "1F4E78" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "D3D3D3" },
-              insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "D3D3D3" },
-            }
-          }));
+          docChildren.push(new Table({ rows: docTableRows, width: { size: 100, type: WidthType.PERCENTAGE } }));
           docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
         }
       } else {
         if (line !== '') {
-          docChildren.push(new Paragraph({
-            children: [new TextRun({ text: lines[i], size: 22 })],
-            spacing: { after: 100 }
-          }));
+          docChildren.push(new Paragraph({ children: [new TextRun({ text: lines[i], size: 22 })], spacing: { after: 100 } }));
         }
         i++;
       }
     }
 
-    const doc = new Document({
-      sections: [{ properties: {}, children: docChildren }],
-    });
-
+    const doc = new Document({ sections: [{ properties: {}, children: docChildren }] });
     const buffer = await Packer.toBuffer(doc);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Service_Report_Feedback.docx');
@@ -400,9 +315,33 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-// Main email dispatch function using Resend with integrated debugging
+// Helper function to send email via Brevo REST API
+async function sendViaBrevo(toEmail, subject, textBody) {
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': BREVO_API_KEY,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { name: "RMNCH System", email: "esubalewzerihun11@gmail.com" }, // Your verified sender email in Brevo
+      to: [{ email: toEmail }],
+      subject: subject,
+      textContent: textBody
+    })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(`Brevo API Error: ${JSON.stringify(errData)}`);
+  }
+  return await response.json();
+}
+
+// Main email dispatch function using Brevo API
 async function runRmnchEmailDispatch() {
-  console.log(`[RMNCH Email Dispatch] Starting execution...`);
+  console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
   try {
     const rawData = await fetchFinalSheetData();
@@ -415,6 +354,7 @@ async function runRmnchEmailDispatch() {
     console.log(`[Dispatch] Active reporting week targeted: "${currentWeek}"`);
 
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
+    const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
     const zonalEmails = {
       "Kaffa": "esubalewzerihun11@gmail.com",
@@ -425,12 +365,9 @@ async function runRmnchEmailDispatch() {
       "Konta": "esubalewzerihun11@gmail.com"
     };
 
-    const regionalEmails = [
-      "esubalewzerihun37@gmail.com",
-      "esubalewzerihun37@gmail.com"
-    ];
+    const regionalEmail = "esubalewzerihun11@gmail.com";
 
-    // 1. Send Individualized Zonal Reports via Resend
+    // 1. Send Individualized Zonal Reports
     for (const zone of zones) {
       const recipientEmail = zonalEmails[zone];
       if (!recipientEmail) continue;
@@ -444,80 +381,66 @@ async function runRmnchEmailDispatch() {
       const reported = zoneData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
       const reportingRateVal = totalExpected > 0 ? (reported.length / totalExpected) * 100 : 0;
       const reportingRateStr = reportingRateVal.toFixed(1) + '%';
-      
       const nonReporting = zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda).join(', ') || 'None';
-      
-      let deaths = [];
-      zoneData.forEach(r => {
-        Object.keys(r).forEach(h => {
-          const lowerH = h.toLowerCase();
-          if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-            deaths.push(`${r['Woreda']}: ${h} = ${r[h]}`);
-          }
-        });
-      });
 
-      let zonalBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (${currentWeek}).\n\n` +
-                      `Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
-                      `Non-Reporting Woredas: ${nonReporting}\n` +
-                      `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}`;
+      let zonalBody = '';
 
-      const response = await resend.emails.send({
-        from: 'RMNCH System <onboarding@resend.dev>',
-        to: recipientEmail,
-        subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (${currentWeek})`,
-        text: zonalBody
-      });
-      
-      if (response.error) {
-        console.error(`❌ [Resend Error for ${zone}]:`, response.error);
+      if (dayOfWeek === 1 || dayOfWeek === 2) {
+        // MON & TUE: Only Reporting Rate and Non-Reporting Woredas List
+        zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} Zone (${currentWeek}).\n\n` +
+                    `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
+                    `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
+                    `Note: Complete analytical breakdown and feedback will be dispatched on Wednesday.`;
       } else {
-        console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator. ID: ${response.data?.id}`);
+        // WEDNESDAY: Full Individualized Complete Analysis
+        zonalBody = await generateAiReport(zone, zoneData, reportingRateStr, zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda), '', {}, {}, [], [], [], currentWeek);
+      }
+
+      try {
+        const result = await sendViaBrevo(
+          recipientEmail,
+          `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} Zone - ${currentWeek}`,
+          zonalBody
+        );
+        console.log(`[Brevo] Sent ${currentWeek} report to ${zone} coordinator. Message ID: ${result.messageId}`);
+      } catch (err) {
+        console.error(`❌ [Brevo Error for ${zone}]:`, err.message);
       }
     }
 
-    // 2. Send Grand Total Regional Report via Resend
+    // 2. Send Grand Total Regional Report
     const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
     const regTotalExpected = regionalData.length;
     const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
     const regReportingRateVal = regTotalExpected > 0 ? (regReported.length / regTotalExpected) * 100 : 0;
     const regReportingRateStr = regReportingRateVal.toFixed(1) + '%';
+    const regNonReporting = regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`).join(', ') || 'None';
 
-    const regNonReporting = regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported')
-                              .map(r => `${r.Zone} (${r.Woreda})`).join(', ') || 'None';
-
-    let regDeaths = [];
-    regionalData.forEach(r => {
-      Object.keys(r).forEach(h => {
-        const lowerH = h.toLowerCase();
-        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(r[h]) > 0) {
-          regDeaths.push(`${r['Zone']} / ${r['Woreda']}: ${h} = ${r[h]}`);
-        }
-      });
-    });
-
-    let regionalBody = `Dear Regional Leadership,\n\n` +
-                       `This Is Weekly Essential RMNCH Service Regional Grand Total Report (${currentWeek}).\n\n` +
-                       `Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
-                       `Non-Reporting Woredas Across Region: ${regNonReporting}\n` +
-                       `Regional Maternal & Neonatal Deaths: ${regDeaths.join(' | ') || 'Zero maternal or neonatal deaths recorded across the region.'}`;
-
-    const regResponse = await resend.emails.send({
-      from: 'RMNCH System <onboarding@resend.dev>',
-      to: regionalEmails,
-      subject: `[Grand Total] Regional RMNCH Service Report Feedback - ${currentWeek}`,
-      text: regionalBody
-    });
-
-    if (regResponse.error) {
-      console.error(`❌ [Resend Error for Regional Leadership]:`, regResponse.error);
+    let regionalBody = '';
+    if (dayOfWeek === 1 || dayOfWeek === 2) {
+      regionalBody = `Dear Regional Leadership,\n\n` +
+                     `This is the Regional Grand Total Status Update (${currentWeek}).\n\n` +
+                     `📊 Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
+                     `⚠️ Non-Reporting Woredas Across Region: ${regNonReporting}\n\n` +
+                     `Note: Complete regional analytics and feedback will be dispatched on Wednesday.`;
     } else {
-      console.log(`[Resend] Sent Regional Grand Total ${currentWeek} report to Regional Leadership. ID: ${regResponse.data?.id}`);
+      regionalBody = await generateAiReport('Grand Total', regionalData, regReportingRateStr, regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`), '', {}, {}, [], [], [], currentWeek);
+    }
+
+    try {
+      const regResult = await sendViaBrevo(
+        regionalEmail,
+        `[Grand Total ${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status' : 'Feedback'}] Regional RMNCH Report - ${currentWeek}`,
+        regionalBody
+      );
+      console.log(`[Brevo] Sent Regional Grand Total report. Message ID: ${regResult.messageId}`);
+    } catch (err) {
+      console.error(`❌ [Brevo Error for Regional Leadership]:`, err.message);
     }
 
     return true;
   } catch (err) {
-    console.error('Error in automated email dispatch via Resend:', err);
+    console.error('Error in automated email dispatch via Brevo:', err);
     throw err;
   }
 }
@@ -526,19 +449,19 @@ async function runRmnchEmailDispatch() {
 app.get('/api/test-email', async (req, res) => {
   try {
     await runRmnchEmailDispatch();
-    res.send('RMNCH email dispatch executed successfully via Resend!');
+    res.send('RMNCH email dispatch executed successfully via Brevo!');
   } catch (err) {
     res.status(500).send('Error executing email dispatch: ' + err.message);
   }
 });
 
-// Scheduled Cron Job: Runs Mon, Tue, Wed at 20:43
-cron.schedule('08 21 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 20:55 UTC
+cron.schedule('55 20 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
 
-// Start Server (Must be at the very bottom)
+// Start Server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
