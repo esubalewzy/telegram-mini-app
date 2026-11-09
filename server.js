@@ -384,18 +384,24 @@ app.get('/health', (req, res) => {
 
 
 
-
-
-
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 
+// Explicit SMTP configuration to prevent connection timeouts on cloud hosting
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
-  }
+  },
+  tls: {
+    rejectUnauthorized: false
+  },
+  connectionTimeout: 10000, // 10 seconds timeout
+  greetingTimeout: 10000,
+  socketTimeout: 10000
 });
 
 // Reusable function containing all your email logic so it can be run by Cron OR manually
