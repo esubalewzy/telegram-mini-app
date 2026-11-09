@@ -372,6 +372,10 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
+// Add this near your other routes in server.js
+app.get('/health', (req, res) => {
+  res.status(200).send('OK - Server is awake');
+});
 
 
 
