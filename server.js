@@ -432,7 +432,7 @@ async function runRmnchEmailDispatch() {
 
     // Corrected to your active email address
     const regionalEmails = [
-      "esubalewzerihun11@gmail.com",
+      "esubalewzerihun37@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
