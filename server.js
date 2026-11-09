@@ -554,3 +554,20 @@ app.get('/api/test-email', async (req, res) => {
     res.status(500).send('Error executing email dispatch: ' + err.message);
   }
 });
+
+
+
+
+
+
+
+// TEMPORARY: Run the automated email dispatch once in 10 minutes (600,000 milliseconds) for testing
+setTimeout(async () => {
+  console.log('[TEST TIMER] 10 minutes elapsed. Triggering automated email dispatch test...');
+  try {
+    await runRmnchEmailDispatch();
+    console.log('[TEST TIMER] Automated test dispatch completed successfully!');
+  } catch (err) {
+    console.error('[TEST TIMER] Automated test dispatch failed:', err);
+  }
+}, 10 * 60 * 1000);
