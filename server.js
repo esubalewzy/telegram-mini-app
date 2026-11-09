@@ -392,7 +392,6 @@ app.get('/health', (req, res) => {
 
 import cron from 'node-cron';
 import { Resend } from 'resend';
-const PORT = process.env.PORT || 3000;
 
 // Initialize Resend with your environment variable (Add RESEND_API_KEY in Render Dashboard)
 const resend = new Resend(process.env.EMAIL_PASS || process.env.RESEND_API_KEY);
