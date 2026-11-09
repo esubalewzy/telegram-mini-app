@@ -535,3 +535,19 @@ cron.schedule('35 20 * * 1,2,3', async () => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+
+
+const response = await resend.emails.send({
+        from: 'RMNCH System <onboarding@resend.dev>',
+        to: recipientEmail,
+        subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (${currentWeek})`,
+        text: zonalBody
+      });
+      
+      // Add this debug check
+      if (response.error) {
+        console.error(`❌ [Resend Error for ${zone}]:`, response.error);
+      } else {
+        console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator. ID: ${response.data?.id}`);
+      }
