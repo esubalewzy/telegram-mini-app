@@ -427,7 +427,7 @@ cron.schedule('30 17 * * 1,2,3', async () => {
     };
 
     const regionalEmails = [
-      "regional.director@swerhb.gov.et",
+      "esubalewzerihun37@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
