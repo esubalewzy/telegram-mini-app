@@ -426,7 +426,7 @@ async function runRmnchEmailDispatch() {
     };
 
     const regionalEmails = [
-      "esubalewzerihun37@gmail.com",
+      "esubalewzerihun11@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
@@ -533,7 +533,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 20:43
-cron.schedule('46 20 * * 1,2,3', async () => {
+cron.schedule('49 20 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
