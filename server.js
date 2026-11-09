@@ -383,8 +383,12 @@ app.listen(PORT, () => {
 
 
 
- import cron from 'node-cron';
+import express from 'express';
+import cron from 'node-cron';
 import nodemailer from 'nodemailer';
+
+const app = express(); // Ensure express is initialized
+const PORT = process.env.PORT || 3000;
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -394,7 +398,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Reusable function containing all your email logic so it can be run by Cron OR manually
+// Reusable email dispatch function
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution...`);
 
@@ -406,16 +410,13 @@ async function runRmnchEmailDispatch() {
     }
 
     const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
-    if (availableWeeks.length === 0) {
-      console.log('[Dispatch] No valid weeks found in data.');
-      return;
-    }
+    if (availableWeeks.length === 0) return;
     
     const currentWeek = availableWeeks[availableWeeks.length - 1];
     console.log(`[Dispatch] Active reporting week detected: Week ${currentWeek}`);
 
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
-    const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
+    const dayOfWeek = new Date().getDay();
 
     const zonalEmails = {
       "Kaffa": "kaffa.coordinator@swerhb.gov.et",
@@ -426,9 +427,8 @@ async function runRmnchEmailDispatch() {
       "Konta": "konta.coordinator@swerhb.gov.et"
     };
 
-    // Corrected to your active email address
     const regionalEmails = [
-      "esubalewzerihun37@gmail.com",
+      "esubalewzerihun11@gmail.com",
       "regional.coordinator@swerhb.gov.et"
     ];
 
@@ -459,20 +459,10 @@ async function runRmnchEmailDispatch() {
         });
       });
 
-      let zonalBody = "";
-      if (dayOfWeek === 3 || reportingRateVal === 100) {
-        zonalBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek}).\n\n` +
-                    `Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
-                    `Non-Reporting Woredas: ${nonReporting}\n` +
-                    `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                    `Please find attached the complete comprehensive RMNCH service feedback report.`;
-      } else {
-        zonalBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek} - Brief Update).\n\n` +
-                    `- Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
-                    `- Non-Reporting Woredas: ${nonReporting}\n` +
-                    `- Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                    `Note: Full feedback is unlocked upon reaching 100% reporting completeness or on Wednesday.`;
-      }
+      let zonalBody = `Hello,\n\nThis Is Weekly Essential RMNCH Service Report Feedback for ${zone} Zone (Week ${currentWeek}).\n\n` +
+                      `Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected})\n` +
+                      `Non-Reporting Woredas: ${nonReporting}\n` +
+                      `Maternal & Neonatal Deaths: ${deaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}`;
 
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
@@ -480,7 +470,6 @@ async function runRmnchEmailDispatch() {
         subject: `This Is Weekly Essential RMNCH Service Report Feedback - ${zone} Zone (Week ${currentWeek})`,
         text: zonalBody
       });
-      console.log(`[Auto-Email] Sent Week ${currentWeek} report to ${zone} coordinator.`);
     }
 
     // 2. Send Grand Total Regional Report
@@ -503,22 +492,11 @@ async function runRmnchEmailDispatch() {
       });
     });
 
-    let regionalBody = "";
-    if (dayOfWeek === 3 || regReportingRateVal === 100) {
-      regionalBody = `Dear Regional Leadership,\n\n` +
-                     `This Is Weekly Essential RMNCH Service Regional Grand Total Report (Week ${currentWeek}).\n\n` +
-                     `Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
-                     `Non-Reporting Woredas Across Region: ${regNonReporting}\n` +
-                     `Regional Maternal & Neonatal Deaths: ${regDeaths.join(' | ') || 'Zero maternal or neonatal deaths recorded across the region.'}\n\n` +
-                     `Please find attached the regional summary and complete RMNCH service report.`;
-    } else {
-      regionalBody = `Dear Regional Leadership,\n\n` +
-                     `This Is Weekly Essential RMNCH Service Regional Grand Total Report (Week ${currentWeek} - Progress Update).\n\n` +
-                     `- Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
-                     `- Non-Reporting Woredas: ${regNonReporting}\n` +
-                     `- Regional Maternal & Neonatal Deaths: ${regDeaths.join(' | ') || 'Zero maternal or neonatal deaths recorded.'}\n\n` +
-                     `Note: Final comprehensive report will be dispatched on Wednesday or when 100% regional reporting is achieved.`;
-    }
+    let regionalBody = `Dear Regional Leadership,\n\n` +
+                       `This Is Weekly Essential RMNCH Service Regional Grand Total Report (Week ${currentWeek}).\n\n` +
+                       `Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
+                       `Non-Reporting Woredas Across Region: ${regNonReporting}\n` +
+                       `Regional Maternal & Neonatal Deaths: ${regDeaths.join(' | ') || 'Zero maternal or neonatal deaths recorded across the region.'}`;
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
@@ -535,13 +513,7 @@ async function runRmnchEmailDispatch() {
   }
 }
 
-// Scheduled Cron Job (Note: Render is in UTC. If you want 5:35 PM EAT, use UTC time 14:35)
-cron.schedule('35 14 * * 1,2,3', async () => {
-  console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
-  await runRmnchEmailDispatch();
-});
-
-// INSTANT TEST ENDPOINT: Visit your-app.onrender.com/api/test-email in your browser to fire it right now!
+// 📌 INSTANT TEST ENDPOINT (Place this BEFORE any catch-all routes)
 app.get('/api/test-email', async (req, res) => {
   try {
     await runRmnchEmailDispatch();
@@ -549,4 +521,13 @@ app.get('/api/test-email', async (req, res) => {
   } catch (err) {
     res.status(500).send('Error executing email dispatch: ' + err.message);
   }
+});
+
+// Scheduled Cron Job (Run at 14:35 UTC / 5:35 PM EAT on Mon, Tue, Wed)
+cron.schedule('35 14 * * 1,2,3', async () => {
+  await runRmnchEmailDispatch();
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
