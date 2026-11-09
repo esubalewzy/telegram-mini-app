@@ -531,13 +531,6 @@ cron.schedule('41 20 * * 1,2,3', async () => {
 
 
 
-// Start Server (Must be at the very bottom)
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-
-
 const response = await resend.emails.send({
         from: 'RMNCH System <onboarding@resend.dev>',
         to: recipientEmail,
@@ -551,3 +544,13 @@ const response = await resend.emails.send({
       } else {
         console.log(`[Resend] Sent ${currentWeek} report to ${zone} coordinator. ID: ${response.data?.id}`);
       }
+
+
+// Start Server (Must be at the very bottom)
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+
+
+
