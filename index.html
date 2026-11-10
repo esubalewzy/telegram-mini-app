@@ -343,6 +343,7 @@
       }
     }
 
+    // Word Document Pushed Directly into Chat Box
     async function downloadWordDoc() {
       if (!currentRawMarkdown) {
         alert("Please generate an analysis report first by clicking 'Generate AI Analysis'.");
@@ -403,7 +404,7 @@
       loadFilters();
 
       document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
-      document.getElementById('exportDocxBtn').addEventListener('click', downloadWordDoc);
+      document.getElementById('exportDocxBtn').addEventListener('click', () => downloadWordDoc());
 
       const promptInput = document.getElementById('customPrompt');
       const sendBtn = document.getElementById('sendPromptBtn');
