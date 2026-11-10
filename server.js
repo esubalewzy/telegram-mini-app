@@ -315,17 +315,11 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-// Helper function to send email via Brevo REST API
-async function sendViaBrevo(toEmail, subject, textBody) {
-   const recipients = Array.isArray(toEmails) ? toEmails : [toEmails];
+// Helper function to send email via Brevo REST API (fully supports arrays or single strings)
+async function sendViaBrevo(toInput, subject, textBody) {
+  const recipients = Array.isArray(toInput) ? toInput : [toInput];
   const toList = recipients.map(email => ({ email }));
+
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
@@ -335,7 +329,7 @@ async function sendViaBrevo(toEmail, subject, textBody) {
     },
     body: JSON.stringify({
       sender: { name: "Dr. Esubalew Zerihun", email: "esubalewzerihun11@gmail.com" },
-      to: [{ email: toEmail }],
+      to: toList,
       subject: subject,
       textContent: textBody
     })
@@ -366,10 +360,10 @@ async function runRmnchEmailDispatch() {
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
     const zonalEmails = {
-      "Kaffa": ["esubalewzerihun37@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Kaffa": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
       "Dawro": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
       "West Omo": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Bench Sheko": ["Joannagashahun13@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Bench Sheko": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
       "Sheka": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
       "Konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
@@ -431,8 +425,8 @@ app.get('/api/test-email', async (req, res) => {
   }
 });
 
-// Scheduled Cron Job: Runs Mon, Tue, Wed at 07:45 UTC
-cron.schedule('30 10 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 10:30 UTC
+cron.schedule('45 10 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
