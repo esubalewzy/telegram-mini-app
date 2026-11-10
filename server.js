@@ -370,7 +370,7 @@ async function runRmnchEmailDispatch() {
     };
 
     // Regional leadership email(s) for Wednesday Grand Total
-    const regionalEmails = ["esubalewzerihun11@gmail.com", "messiwode46@gmail.com"];
+    const regionalEmails = ["esubalewzerihun11@gmail.com"];
 
     // 1. Loop through each zone and send strictly zone-filtered reports to zonal coordinators (Mon, Tue, Wed)
     for (const zone of zones) {
