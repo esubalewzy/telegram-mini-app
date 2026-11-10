@@ -17,7 +17,6 @@ app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Groq & Brevo keys safely
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 
@@ -54,8 +53,7 @@ async function fetchFinalSheetData() {
     if (lines.length === 0) return [];
 
     const headers = parseCSVLine(lines[0]);
-
-    const rows = lines.slice(1).map(line => {
+    return lines.slice(1).map(line => {
       const values = parseCSVLine(line);
       let obj = {};
       headers.forEach((h, index) => {
@@ -63,17 +61,14 @@ async function fetchFinalSheetData() {
       });
       return obj;
     });
-
-    return rows;
   } catch (err) {
     console.error('Sheet Fetch Error:', err);
     throw err;
   }
 }
 
-// Automatically determine active reporting week starting from Week 19 today and advancing weekly
 function getCurrentReportingWeek(rawData) {
-  const baseDate = new Date('2026-11-09'); // Week 19 start anchor
+  const baseDate = new Date('2026-11-09');
   const baseWeekNumber = 19;
    
   const currentDate = new Date();
@@ -87,17 +82,13 @@ function getCurrentReportingWeek(rawData) {
   const availableWeeks = [...new Set(rawData.map(r => r.Week ? r.Week.toString().trim() : null).filter(Boolean))];
   const matchedWeek = availableWeeks.find(w => w.toLowerCase().includes(targetWeekQuery.toLowerCase()));
 
-  if (matchedWeek) {
-    return matchedWeek;
-  }
-  return availableWeeks[availableWeeks.length - 1];
+  return matchedWeek || availableWeeks[availableWeeks.length - 1];
 }
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Health check endpoint for Render & UptimeRobot keep-alive
 app.get('/health', (req, res) => {
   res.status(200).send('OK - Server is awake');
 });
@@ -113,7 +104,6 @@ app.get('/api/filters', async (req, res) => {
   }
 });
 
-// Helper to generate AI comprehensive analysis using Groq
 async function generateAiReport(zoneName, filteredData, reportingRate, nonReportingWoredas, weeklyTrendSummary, categorizedIndicators, hstp2OfficialTargets, qualityIssues, hepBDMissedWoredas, mortalityAlerts, currentWeek) {
   const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, exhaustive analytical report without truncating any categories.
 
@@ -128,20 +118,7 @@ Data Context:
 - Official Ethiopian HSTP-II Targets: ${JSON.stringify(hstp2OfficialTargets)}
 - Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
 - Consistency & Data Quality Issues: ${qualityIssues.join(' | ') || 'None'}
-- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}
-
-Required Report Structure:
-1. **Reporting Rate Summary**
-2. **Multi-Week Reporting Trend Analysis**
-3. **Category 1: SRH Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-4. **Category 2: Maternal Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-5. **Category 3: EPI Services** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-6. **Category 4: Child Health Service** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-7. **Category 5: Nutrition** (Table format: | Indicator | Performed | Eligible | Coverage % |)
-8. **Hepatitis BD Birth Dose Missed Woredas Audit**
-9. **Data Quality & Consistency Audit**
-10. **Dedicated Ethiopian HSTP-II Strategic Benchmarking Evaluation**
-11. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
+- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
@@ -316,7 +293,6 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-// Helper function to send email via Brevo REST API (fully supports arrays or single strings)
 async function sendViaBrevo(toInput, subject, textBody) {
   const recipients = Array.isArray(toInput) ? toInput : [toInput];
   const toList = recipients.map(email => ({ email }));
@@ -343,22 +319,16 @@ async function sendViaBrevo(toInput, subject, textBody) {
   return await response.json();
 }
 
-// Main email dispatch function supporting forced day for testing
 async function runRmnchEmailDispatch(forcedDay = null) {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
   try {
     const rawData = await fetchFinalSheetData();
-    if (!rawData || rawData.length === 0) {
-      console.log('[Dispatch] No data found in Google Sheet.');
-      return;
-    }
+    if (!rawData || rawData.length === 0) return;
 
     const currentWeek = getCurrentReportingWeek(rawData);
-    console.log(`[Dispatch] Active reporting week targeted: "${currentWeek}"`);
-
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
-    const dayOfWeek = forcedDay !== null ? forcedDay : new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
+    const dayOfWeek = forcedDay !== null ? forcedDay : new Date().getDay();
 
     const zonalEmails = {
       "kaffa zone": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
@@ -369,18 +339,12 @@ async function runRmnchEmailDispatch(forcedDay = null) {
       "konta zone": ["tsegabebe2015@gmail.com", "degemukidist365@gmail.com"]
     };
 
-    // Regional leadership email(s) for Wednesday Grand Total
     const regionalEmails = ["esubalewzerihun11@gmail.com", "messiwode46@gmail.com"];
 
-    // 1. Loop through each zone and send zone-filtered reports
     for (const zone of zones) {
       const cleanZoneKey = zone.toString().trim().toLowerCase();
       const recipientEmail = zonalEmails[cleanZoneKey];
-
-      if (!recipientEmail) {
-        console.warn(`⚠️ [Dispatch] No email configuration found for zone: "${zone}". Skipping.`);
-        continue;
-      }
+      if (!recipientEmail) continue;
 
       const zoneData = rawData.filter(r => 
         r.Zone && r.Zone.toString().trim().toLowerCase() === cleanZoneKey &&
@@ -389,12 +353,10 @@ async function runRmnchEmailDispatch(forcedDay = null) {
 
       const totalExpected = zoneData.length;
       const reported = zoneData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-      const reportingRateVal = totalExpected > 0 ? (reported.length / totalExpected) * 100 : 0;
-      const reportingRateStr = reportingRateVal.toFixed(1) + '%';
+      const reportingRateStr = totalExpected > 0 ? ((reported.length / totalExpected) * 100).toFixed(1) + '%' : '0%';
       const nonReporting = zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda).join(', ') || 'None';
 
       let zonalBody = '';
-
       if (dayOfWeek === 1 || dayOfWeek === 2) {
         zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} (${currentWeek}).\n\n` +
                     `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
@@ -404,11 +366,52 @@ async function runRmnchEmailDispatch(forcedDay = null) {
         zonalBody = await generateAiReport(zone, zoneData, reportingRateStr, zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda), '', {}, {}, [], [], [], currentWeek);
       }
 
-      try {
-        const result = await sendViaBrevo(
-          recipientEmail,
-          `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} - ${currentWeek}`,
-          zonalBody
-        );
-        console.log(`[Brevo] Sent ${currentWeek} report for ${zone}. Message ID: ${result.messageId}`);
-      } catch (err)
+      await sendViaBrevo(
+        recipientEmail,
+        `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} - ${currentWeek}`,
+        zonalBody
+      );
+    }
+
+    if (dayOfWeek === 3) {
+      const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
+      const regTotalExpected = regionalData.length;
+      const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+      const regReportingRateStr = regTotalExpected > 0 ? ((regReported.length / regTotalExpected) * 100).toFixed(1) + '%' : '0%';
+
+      const regionalBody = await generateAiReport(
+        'Grand Total', regionalData, regReportingRateStr, 
+        regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`), 
+        '', {}, {}, [], [], [], currentWeek
+      );
+
+      await sendViaBrevo(
+        regionalEmails,
+        `[Feedback & Analysis] Regional Grand Total RMNCH Report - ${currentWeek}`,
+        regionalBody
+      );
+    }
+    return true;
+  } catch (err) {
+    console.error('Error in automated email dispatch via Brevo:', err);
+    throw err;
+  }
+}
+
+app.get('/api/test-email', async (req, res) => {
+  try {
+    const forcedDay = req.query.day ? parseInt(req.query.day) : null;
+    await runRmnchEmailDispatch(forcedDay);
+    res.send(`RMNCH email test executed successfully via Brevo (Forced Day: ${forcedDay !== null ? forcedDay : 'Today'})!`);
+  } catch (err) {
+    res.status(500).send('Error executing email dispatch: ' + err.message);
+  }
+});
+
+cron.schedule('30 10 * * 1,2,3', async () => {
+  await runRmnchEmailDispatch();
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
