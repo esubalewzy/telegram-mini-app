@@ -475,3 +475,76 @@ cron.schedule('30 10 * * 1,2,3', async () => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+
+
+
+
+import { 
+  Document, Packer, Paragraph, TextRun, HeadingLevel, 
+  Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, AlignmentType 
+} from 'docx';
+
+app.post('/api/export-docx', async (req, res) => {
+  try {
+    const { reportText, title } = req.body;
+    const lines = (reportText || "").split('\n');
+    const docChildren = [
+      new Paragraph({
+        text: title || "Weekly Essential RMNCH Service Report Feedback",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 200 }
+      })
+    ];
+
+    let i = 0;
+    while (i < lines.length) {
+      let line = lines[i].trim();
+      if (line.startsWith('|') && line.endsWith('|')) {
+        let tableRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          let rowLine = lines[i].trim();
+          if (!rowLine.includes('---')) {
+            let cells = rowLine.split('|').filter(c => c !== '').map(c => c.trim());
+            tableRows.push(cells);
+          }
+          i++;
+        }
+        if (tableRows.length > 0) {
+          const docTableRows = tableRows.map((rowCells, rowIndex) => {
+            const isHeader = rowIndex === 0;
+            return new TableRow({
+              children: rowCells.map(cellText => {
+                return new TableCell({
+                  children: [new Paragraph({
+                    alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
+                    children: [new TextRun({ text: cellText, bold: isHeader, color: isHeader ? "FFFFFF" : "000000", size: 18 })]
+                  })],
+                  width: { size: 2000, type: WidthType.DXA },
+                  shading: isHeader ? { fill: "1F4E78", val: ShadingType.CLEAR, color: "auto" } : { fill: rowIndex % 2 === 0 ? "F2F4F8" : "FFFFFF", val: ShadingType.CLEAR, color: "auto" }
+                });
+              })
+            });
+          });
+          docChildren.push(new Table({ rows: docTableRows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+          docChildren.push(new Paragraph({ text: "", spacing: { after: 150 } }));
+        }
+      } else {
+        if (line !== '') {
+          docChildren.push(new Paragraph({ children: [new TextRun({ text: lines[i], size: 22 })], spacing: { after: 100 } }));
+        }
+        i++;
+      }
+    }
+
+    const doc = new Document({ sections: [{ properties: {}, children: docChildren }] });
+    const buffer = await Packer.toBuffer(doc);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=RMNCH_Service_Report_Feedback.docx');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Docx Export Error:', err);
+    res.status(500).json({ error: 'Failed to generate Word document.' });
+  }
+});
