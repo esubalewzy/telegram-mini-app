@@ -136,3 +136,291 @@
         <!-- Week Selector -->
         <label class="block text-xs font-semibold text-slate-700 mb-1.5">Reporting Week</label>
         <select id="weekSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-4 font-medium transition-all">
+          <option value="All Weeks">All Weeks</option>
+        </select>
+
+        <!-- Generate Full Report Button -->
+        <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.99]">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Analysis
+        </button>
+      </div>
+
+      <hr class="border-slate-100" />
+
+      <!-- Export Options -->
+      <div>
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Export Tools</h3>
+        <button id="exportDocxBtn" class="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+          <i class="fa-solid fa-file-word text-blue-400"></i> Export to Word (.docx)
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Output & Interactive AI Chat Panel -->
+    <section class="lg:col-span-3 flex flex-col gap-4">
+
+      <!-- Looker Studio Dashboard Embed Card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-chart-pie text-blue-600"></i> Looker Studio Visual Analytics
+          </h3>
+          <span class="text-[11px] text-slate-400 font-medium">Live Data Stream</span>
+        </div>
+        <div class="w-full h-[380px] rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+          <iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" 
+                  class="w-full h-full border-0" 
+                  allowfullscreen>
+          </iframe>
+        </div>
+      </div>
+
+      <!-- Interactive Output Display Window -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 flex-1 flex flex-col min-h-[550px] overflow-hidden">
+        
+        <!-- Window Header -->
+        <div class="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-slate-50/60">
+          <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-brain text-blue-600"></i> Analytics & Conversational Feedback Output
+          </h2>
+          <span id="statusBadge" class="text-xs font-semibold bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200">System Ready</span>
+        </div>
+
+        <!-- Scrollable Output / Chat Content Area -->
+        <div id="reportOutput" class="p-6 overflow-y-auto flex-1 custom-scroll markdown-body text-slate-700 leading-relaxed flex flex-col gap-4">
+          <div id="welcomePlaceholder" class="h-full my-auto flex flex-col items-center justify-center text-slate-400 gap-3 py-20">
+            <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1 border border-slate-200/60">
+              <i class="fa-solid fa-comments text-2xl text-slate-400"></i>
+            </div>
+            <p class="text-sm text-center max-w-sm text-slate-500">
+              Select a Zone and Week above, then click <strong>"Generate AI Analysis"</strong> or type a message below to interact with your RMNCH Data Auditor.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Prompt & Chat Input Bar -->
+      <div class="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200/80 flex gap-2 items-center">
+        <input type="text" id="customPrompt" placeholder="Ask follow-up questions, refine indicators, or type 'download word'..." class="flex-1 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none transition-all" />
+        <button id="sendPromptBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-3 rounded-xl transition-all flex items-center gap-2 shadow-sm whitespace-nowrap active:scale-[0.98]">
+          <i class="fa-solid fa-paper-plane"></i> Send
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- JavaScript Core -->
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    let currentRawMarkdown = "";
+
+    async function loadFilters() {
+      try {
+        const response = await fetch('/api/filters');
+        const data = await response.json();
+
+        const zoneSelect = document.getElementById('zoneSelect');
+        const weekSelect = document.getElementById('weekSelect');
+
+        if (data.zones && data.zones.length > 0) {
+          data.zones.forEach(zone => {
+            const option = document.createElement('option');
+            option.value = zone;
+            option.textContent = zone;
+            zoneSelect.appendChild(option);
+          });
+        }
+
+        if (data.weeks && data.weeks.length > 0) {
+          data.weeks.forEach(week => {
+            const option = document.createElement('option');
+            option.value = week;
+            option.textContent = week;
+            weekSelect.appendChild(option);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load spreadsheet filters:", err);
+      }
+    }
+
+    function appendUserMessage(text) {
+      const output = document.getElementById('reportOutput');
+      const welcome = document.getElementById('welcomePlaceholder');
+      if (welcome) welcome.remove();
+
+      const userDiv = document.createElement('div');
+      userDiv.className = "self-end bg-blue-600 text-white font-medium text-sm px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] shadow-sm my-1";
+      userDiv.textContent = text;
+      output.appendChild(userDiv);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function showTypingIndicator() {
+      const output = document.getElementById('reportOutput');
+      const welcome = document.getElementById('welcomePlaceholder');
+      if (welcome) welcome.remove();
+
+      const indicator = document.createElement('div');
+      indicator.id = "typingIndicator";
+      indicator.className = "self-start bg-slate-100 border border-slate-200/80 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5 my-1";
+      indicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+      output.appendChild(indicator);
+      output.scrollTop = output.scrollHeight;
+      return indicator;
+    }
+
+    function removeTypingIndicator() {
+      const indicator = document.getElementById('typingIndicator');
+      if (indicator) indicator.remove();
+    }
+
+    async function fetchReport(userPrompt = null) {
+      const zone = document.getElementById('zoneSelect').value;
+      const week = document.getElementById('weekSelect').value;
+      const reportOutput = document.getElementById('reportOutput');
+      const statusBadge = document.getElementById('statusBadge');
+      const exportBtn = document.getElementById('exportDocxBtn');
+
+      if (userPrompt && (userPrompt.toLowerCase().includes('download') || userPrompt.toLowerCase().includes('word') || userPrompt.toLowerCase().includes('docx'))) {
+        appendUserMessage(userPrompt);
+        await downloadWordDoc();
+        return;
+      }
+
+      const queryText = userPrompt || "Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.";
+      
+      if (userPrompt) {
+        appendUserMessage(userPrompt);
+      }
+
+      statusBadge.textContent = "Analyzing Data...";
+      statusBadge.className = "text-xs font-semibold bg-amber-100 text-amber-700 px-3 py-1 rounded-full border border-amber-200 animate-pulse";
+
+      showTypingIndicator();
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: queryText,
+            selectedZone: zone,
+            selectedWeek: week,
+            user: tg?.initDataUnsafe?.user || {}
+          })
+        });
+
+        const data = await response.json();
+        removeTypingIndicator();
+
+        currentRawMarkdown = data.reply || "No feedback generated.";
+
+        const botDiv = document.createElement('div');
+        botDiv.className = "self-start w-full bg-slate-50 border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm my-1";
+        botDiv.innerHTML = marked.parse(currentRawMarkdown);
+        reportOutput.appendChild(botDiv);
+        reportOutput.scrollTop = reportOutput.scrollHeight;
+
+        statusBadge.textContent = "Analysis Complete";
+        statusBadge.className = "text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200";
+
+        exportBtn.disabled = false;
+
+      } catch (err) {
+        removeTypingIndicator();
+        const errDiv = document.createElement('div');
+        errDiv.className = "self-start text-red-600 bg-red-50 border border-red-200 p-4 rounded-xl text-sm font-medium my-1";
+        errDiv.textContent = "Error loading report: " + err.message;
+        reportOutput.appendChild(errDiv);
+
+        statusBadge.textContent = "Error";
+        statusBadge.className = "text-xs font-semibold bg-red-100 text-red-700 px-3 py-1 rounded-full border border-red-200";
+      }
+    }
+
+    async function downloadWordDoc() {
+      if (!currentRawMarkdown) {
+        alert("Please generate an analysis report first by clicking 'Generate AI Analysis'.");
+        return;
+      }
+
+      const zone = document.getElementById('zoneSelect').value;
+      const week = document.getElementById('weekSelect').value;
+      const title = `Weekly RMNCH Feedback - ${zone} (${week})`;
+      const reportOutput = document.getElementById('reportOutput');
+
+      const typing = showTypingIndicator();
+
+      try {
+        const response = await fetch('/api/export-docx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportText: currentRawMarkdown, title: title })
+        });
+
+        if (!response.ok) throw new Error('Failed to create Word document');
+
+        const blob = await response.blob();
+        
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = function() {
+          const base64data = reader.result;
+          removeTypingIndicator();
+
+          const card = document.createElement('div');
+          card.className = "self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg";
+          card.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm">
+                <i class="fa-solid fa-file-word"></i>
+              </div>
+              <div>
+                <p class="font-bold text-sm text-emerald-950">Word Document Ready!</p>
+                <p class="text-xs text-emerald-700">Feedback Report for ${zone} (${week})</p>
+              </div>
+            </div>
+            <a href="${base64data}" download="RMNCH_Report_${zone}_${week}.docx" target="_blank" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
+              <i class="fa-solid fa-download mr-1"></i> Tap to Save .docx
+            </a>
+          `;
+          reportOutput.appendChild(card);
+          reportOutput.scrollTop = reportOutput.scrollHeight;
+        };
+
+      } catch (err) {
+        removeTypingIndicator();
+        alert("Failed to export Word document: " + err.message);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadFilters();
+
+      document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
+      document.getElementById('exportDocxBtn').addEventListener('click', downloadWordDoc);
+
+      const promptInput = document.getElementById('customPrompt');
+      const sendBtn = document.getElementById('sendPromptBtn');
+
+      const handleSend = () => {
+        const text = promptInput.value.trim();
+        if (text) {
+          fetchReport(text);
+          promptInput.value = '';
+        }
+      };
+
+      sendBtn.addEventListener('click', handleSend);
+      promptInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSend();
+      });
+    });
+  </script>
+</body>
+</html>
