@@ -339,6 +339,13 @@ async function sendViaBrevo(toEmail, subject, textBody) {
   return await response.json();
 }
 
+
+
+
+
+
+
+
 // Main email dispatch function using Brevo API
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
@@ -356,6 +363,7 @@ async function runRmnchEmailDispatch() {
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
+    // Map each zone to its respective email recipient (including regional leadership if they need individual zone reports)
     const zonalEmails = {
       "Kaffa": "esubalewzerihun37@gmail.com",
       "Dawro": "esubalewzerihun11@gmail.com",
@@ -365,13 +373,14 @@ async function runRmnchEmailDispatch() {
       "Konta": "esubalewzerihun11@gmail.com"
     };
 
+    // If regional leadership wants individual reports for EACH zone separately:
     const regionalEmail = "esubalewzerihun11@gmail.com";
 
-    // 1. Send Individualized Zonal Reports
+    // Loop through each zone and send strictly zone-filtered reports
     for (const zone of zones) {
-      const recipientEmail = zonalEmails[zone];
-      if (!recipientEmail) continue;
+      const recipientEmail = zonalEmails[zone] || regionalEmail;
 
+      // STRICT ZONE FILTERING: Only rows matching this specific zone and week
       const zoneData = rawData.filter(r => 
         r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
         r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase())
@@ -386,13 +395,13 @@ async function runRmnchEmailDispatch() {
       let zonalBody = '';
 
       if (dayOfWeek === 1 || dayOfWeek === 2) {
-        // MON & TUE: Only Reporting Rate and Non-Reporting Woredas List
+        // MON & TUE: Only Reporting Rate and Non-Reporting Woredas List for this specific zone
         zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} Zone (${currentWeek}).\n\n` +
                     `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
                     `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
                     `Note: Complete analytical breakdown and feedback will be dispatched on Wednesday.`;
       } else {
-        // WEDNESDAY: Full Individualized Complete Analysis
+        // WEDNESDAY: Full Individualized Complete Analysis strictly for this zone
         zonalBody = await generateAiReport(zone, zoneData, reportingRateStr, zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda), '', {}, {}, [], [], [], currentWeek);
       }
 
@@ -402,40 +411,10 @@ async function runRmnchEmailDispatch() {
           `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} Zone - ${currentWeek}`,
           zonalBody
         );
-        console.log(`[Brevo] Sent ${currentWeek} report to ${zone} coordinator. Message ID: ${result.messageId}`);
+        console.log(`[Brevo] Sent ${currentWeek} report for ${zone} zone. Message ID: ${result.messageId}`);
       } catch (err) {
         console.error(`❌ [Brevo Error for ${zone}]:`, err.message);
       }
-    }
-
-    // 2. Send Grand Total Regional Report
-    const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
-    const regTotalExpected = regionalData.length;
-    const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-    const regReportingRateVal = regTotalExpected > 0 ? (regReported.length / regTotalExpected) * 100 : 0;
-    const regReportingRateStr = regReportingRateVal.toFixed(1) + '%';
-    const regNonReporting = regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`).join(', ') || 'None';
-
-    let regionalBody = '';
-    if (dayOfWeek === 1 || dayOfWeek === 2) {
-      regionalBody = `Dear Regional Leadership,\n\n` +
-                     `This is the Regional Grand Total Status Update (${currentWeek}).\n\n` +
-                     `📊 Overall Regional Reporting Rate: ${regReportingRateStr} (${regReported.length}/${regTotalExpected})\n` +
-                     `⚠️ Non-Reporting Woredas Across Region: ${regNonReporting}\n\n` +
-                     `Note: Complete regional analytics and feedback will be dispatched on Wednesday.`;
-    } else {
-      regionalBody = await generateAiReport('Grand Total', regionalData, regReportingRateStr, regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`), '', {}, {}, [], [], [], currentWeek);
-    }
-
-    try {
-      const regResult = await sendViaBrevo(
-        regionalEmail,
-        `[Grand Total ${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status' : 'Feedback'}] Regional RMNCH Report - ${currentWeek}`,
-        regionalBody
-      );
-      console.log(`[Brevo] Sent Regional Grand Total report. Message ID: ${regResult.messageId}`);
-    } catch (err) {
-      console.error(`❌ [Brevo Error for Regional Leadership]:`, err.message);
     }
 
     return true;
@@ -445,23 +424,8 @@ async function runRmnchEmailDispatch() {
   }
 }
 
-// Instant test endpoint
-app.get('/api/test-email', async (req, res) => {
-  try {
-    await runRmnchEmailDispatch();
-    res.send('RMNCH email dispatch executed successfully via Brevo!');
-  } catch (err) {
-    res.status(500).send('Error executing email dispatch: ' + err.message);
-  }
-});
-
-// Scheduled Cron Job: Runs Mon, Tue, Wed at 20:55 UTC
-cron.schedule('45 7 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 07:45 UTC
+cron.schedule('58 7 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
-});
-
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
