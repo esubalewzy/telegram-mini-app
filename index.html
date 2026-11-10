@@ -14,29 +14,18 @@
   <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 
-  <!-- Telegram WebApp Integration (if hosted as Telegram Mini App) -->
+  <!-- Telegram WebApp Integration -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
 
-    /* Custom Scrollbar for Output & Chat Boxes */
-    .custom-scroll::-webkit-scrollbar {
-      width: 6px;
-    }
-    .custom-scroll::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    .custom-scroll::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 4px;
-    }
-    .custom-scroll::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8;
-    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-    /* Markdown Output Styling */
     .markdown-body table {
       width: 100%;
       border-collapse: collapse;
@@ -58,12 +47,8 @@
       padding: 0.65rem;
       border: 1px solid #e2e8f0;
     }
-    .markdown-body tr:nth-child(even) {
-      background-color: #f8fafc;
-    }
-    .markdown-body tr:hover {
-      background-color: #f1f5f9;
-    }
+    .markdown-body tr:nth-child(even) { background-color: #f8fafc; }
+    .markdown-body tr:hover { background-color: #f1f5f9; }
     .markdown-body h1, .markdown-body h2, .markdown-body h3 {
       font-weight: 700;
       margin-top: 1.5rem;
@@ -77,7 +62,6 @@
     .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; }
     .markdown-body li { margin-bottom: 0.35rem; }
 
-    /* Animated Typing Indicator */
     .typing-dot {
       width: 6px;
       height: 6px;
@@ -95,7 +79,7 @@
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col">
 
-  <!-- Header / Top Bar -->
+  <!-- Header -->
   <header class="bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 text-white shadow-lg sticky top-0 z-30">
     <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
       <div class="flex items-center space-x-3">
@@ -117,29 +101,26 @@
     </div>
   </header>
 
-  <!-- Main Grid Workspace -->
+  <!-- Main Workspace -->
   <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
 
-    <!-- Sidebar Controls & Tools -->
+    <!-- Sidebar Controls -->
     <aside class="lg:col-span-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col gap-5 h-fit">
       <div>
         <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
           <i class="fa-solid fa-sliders text-blue-600"></i> Report Controls
         </h2>
 
-        <!-- Zone Selector -->
         <label class="block text-xs font-semibold text-slate-700 mb-1.5">Target Zone</label>
         <select id="zoneSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-3.5 font-medium transition-all">
           <option value="Grand Total">Grand Total (All Zones)</option>
         </select>
 
-        <!-- Week Selector -->
         <label class="block text-xs font-semibold text-slate-700 mb-1.5">Reporting Week</label>
         <select id="weekSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-4 font-medium transition-all">
           <option value="All Weeks">All Weeks</option>
         </select>
 
-        <!-- Generate Full Report Button -->
         <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.99]">
           <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Analysis
         </button>
@@ -147,19 +128,18 @@
 
       <hr class="border-slate-100" />
 
-      <!-- Export Options -->
       <div>
         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Export Tools</h3>
-        <button id="exportDocxBtn" class="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <button id="exportDocxBtn" class="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
           <i class="fa-solid fa-file-word text-blue-400"></i> Export to Word (.docx)
         </button>
       </div>
     </aside>
 
-    <!-- Main Output & Interactive AI Chat Panel -->
+    <!-- Main Output & Looker Dashboard -->
     <section class="lg:col-span-3 flex flex-col gap-4">
 
-      <!-- Looker Studio Dashboard Embed Card -->
+      <!-- Looker Studio Dashboard Embed -->
       <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -175,10 +155,8 @@
         </div>
       </div>
 
-      <!-- Interactive Output Display Window -->
+      <!-- Output Window -->
       <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 flex-1 flex flex-col min-h-[550px] overflow-hidden">
-        
-        <!-- Window Header -->
         <div class="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-slate-50/60">
           <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
             <i class="fa-solid fa-brain text-blue-600"></i> Analytics & Conversational Feedback Output
@@ -186,7 +164,6 @@
           <span id="statusBadge" class="text-xs font-semibold bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200">System Ready</span>
         </div>
 
-        <!-- Scrollable Output / Chat Content Area -->
         <div id="reportOutput" class="p-6 overflow-y-auto flex-1 custom-scroll markdown-body text-slate-700 leading-relaxed flex flex-col gap-4">
           <div id="welcomePlaceholder" class="h-full my-auto flex flex-col items-center justify-center text-slate-400 gap-3 py-20">
             <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1 border border-slate-200/60">
@@ -199,7 +176,7 @@
         </div>
       </div>
 
-      <!-- Interactive Prompt & Chat Input Bar -->
+      <!-- Chat Input Bar -->
       <div class="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200/80 flex gap-2 items-center">
         <input type="text" id="customPrompt" placeholder="Ask follow-up questions, refine indicators, or type 'download word'..." class="flex-1 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none transition-all" />
         <button id="sendPromptBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-3 rounded-xl transition-all flex items-center gap-2 shadow-sm whitespace-nowrap active:scale-[0.98]">
@@ -211,7 +188,7 @@
 
   </main>
 
-  <!-- JavaScript Core -->
+  <!-- JavaScript -->
   <script>
     const tg = window.Telegram?.WebApp;
     if (tg) { tg.ready(); tg.expand(); }
@@ -243,6 +220,9 @@
             weekSelect.appendChild(option);
           });
         }
+
+        // Auto-generate initial report on load so export data is immediately ready
+        fetchReport();
       } catch (err) {
         console.error("Failed to load spreadsheet filters:", err);
       }
@@ -284,7 +264,6 @@
       const week = document.getElementById('weekSelect').value;
       const reportOutput = document.getElementById('reportOutput');
       const statusBadge = document.getElementById('statusBadge');
-      const exportBtn = document.getElementById('exportDocxBtn');
 
       if (userPrompt && (userPrompt.toLowerCase().includes('download') || userPrompt.toLowerCase().includes('word') || userPrompt.toLowerCase().includes('docx'))) {
         appendUserMessage(userPrompt);
@@ -329,8 +308,6 @@
         statusBadge.textContent = "Analysis Complete";
         statusBadge.className = "text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200";
 
-        exportBtn.disabled = false;
-
       } catch (err) {
         removeTypingIndicator();
         const errDiv = document.createElement('div');
@@ -343,17 +320,20 @@
       }
     }
 
-    // Word Document Pushed Directly into Chat Box
+    // Export Word Document Pushed Directly into Chat Box
     async function downloadWordDoc() {
-      if (!currentRawMarkdown) {
-        alert("Please generate an analysis report first by clicking 'Generate AI Analysis'.");
-        return;
-      }
-
       const zone = document.getElementById('zoneSelect').value;
       const week = document.getElementById('weekSelect').value;
       const title = `Weekly RMNCH Feedback - ${zone} (${week})`;
       const reportOutput = document.getElementById('reportOutput');
+
+      // Fallback: if currentRawMarkdown is empty, grab text from current view
+      const textToExport = currentRawMarkdown || reportOutput.innerText;
+
+      if (!textToExport || textToExport.trim().length === 0) {
+        alert("Please generate or view an analysis report first.");
+        return;
+      }
 
       const typing = showTypingIndicator();
 
@@ -361,7 +341,7 @@
         const response = await fetch('/api/export-docx', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportText: currentRawMarkdown, title: title })
+          body: JSON.stringify({ reportText: textToExport, title: title })
         });
 
         if (!response.ok) throw new Error('Failed to create Word document');
@@ -405,6 +385,9 @@
 
       document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
       document.getElementById('exportDocxBtn').addEventListener('click', () => downloadWordDoc());
+
+      document.getElementById('zoneSelect').addEventListener('change', () => fetchReport());
+      document.getElementById('weekSelect').addEventListener('change', () => fetchReport());
 
       const promptInput = document.getElementById('customPrompt');
       const sendBtn = document.getElementById('sendPromptBtn');
