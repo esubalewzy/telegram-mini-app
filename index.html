@@ -170,7 +170,7 @@
               <i class="fa-solid fa-comments text-2xl text-slate-400"></i>
             </div>
             <p class="text-sm text-center max-w-sm text-slate-500">
-              Select a Zone and Week above, then click <strong>"Generate AI Analysis"</strong> or type a message below to interact with your RMNCH Data Auditor.
+              Select your target Zone and Week above, then click <strong>"Generate AI Analysis"</strong> to produce your audit report.
             </p>
           </div>
         </div>
@@ -220,9 +220,6 @@
             weekSelect.appendChild(option);
           });
         }
-
-        // Auto-generate initial report on load so export data is immediately ready
-        fetchReport();
       } catch (err) {
         console.error("Failed to load spreadsheet filters:", err);
       }
@@ -320,18 +317,17 @@
       }
     }
 
-    // Export Word Document Pushed Directly into Chat Box
+    // Android-Compatible Direct Blob Download & Chat Push
     async function downloadWordDoc() {
       const zone = document.getElementById('zoneSelect').value;
       const week = document.getElementById('weekSelect').value;
       const title = `Weekly RMNCH Feedback - ${zone} (${week})`;
       const reportOutput = document.getElementById('reportOutput');
 
-      // Fallback: if currentRawMarkdown is empty, grab text from current view
       const textToExport = currentRawMarkdown || reportOutput.innerText;
 
-      if (!textToExport || textToExport.trim().length === 0) {
-        alert("Please generate or view an analysis report first.");
+      if (!textToExport || textToExport.trim().length === 0 || textToExport.includes("Select your target Zone")) {
+        alert("Please generate an analysis report first.");
         return;
       }
 
@@ -347,32 +343,39 @@
         if (!response.ok) throw new Error('Failed to create Word document');
 
         const blob = await response.blob();
-        
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = function() {
-          const base64data = reader.result;
-          removeTypingIndicator();
+        removeTypingIndicator();
 
-          const card = document.createElement('div');
-          card.className = "self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg";
-          card.innerHTML = `
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm">
-                <i class="fa-solid fa-file-word"></i>
-              </div>
-              <div>
-                <p class="font-bold text-sm text-emerald-950">Word Document Ready!</p>
-                <p class="text-xs text-emerald-700">Feedback Report for ${zone} (${week})</p>
-              </div>
+        // Android-friendly Blob URL technique
+        const url = window.URL.createObjectURL(blob);
+        const filename = `RMNCH_Report_${zone}_${week}.docx`.replace(/\s+/g, '_');
+
+        // Render interactive download card in chat
+        const card = document.createElement('div');
+        card.className = "self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg";
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm">
+              <i class="fa-solid fa-file-word"></i>
             </div>
-            <a href="${base64data}" download="RMNCH_Report_${zone}_${week}.docx" target="_blank" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
-              <i class="fa-solid fa-download mr-1"></i> Tap to Save .docx
-            </a>
-          `;
-          reportOutput.appendChild(card);
-          reportOutput.scrollTop = reportOutput.scrollHeight;
-        };
+            <div>
+              <p class="font-bold text-sm text-emerald-950">Word Document Ready!</p>
+              <p class="text-xs text-emerald-700">Feedback Report for ${zone} (${week})</p>
+            </div>
+          </div>
+          <a href="${url}" download="${filename}" target="_blank" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
+            <i class="fa-solid fa-download mr-1"></i> Tap to Save .docx
+          </a>
+        `;
+        reportOutput.appendChild(card);
+        reportOutput.scrollTop = reportOutput.scrollHeight;
+
+        // Auto-trigger direct download on supported Android browsers
+        const tempLink = document.createElement('a');
+        tempLink.href = url;
+        tempLink.download = filename;
+        document.body.appendChild(tempLink);
+        tempLink.click();
+        document.body.removeChild(tempLink);
 
       } catch (err) {
         removeTypingIndicator();
@@ -385,9 +388,6 @@
 
       document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
       document.getElementById('exportDocxBtn').addEventListener('click', () => downloadWordDoc());
-
-      document.getElementById('zoneSelect').addEventListener('change', () => fetchReport());
-      document.getElementById('weekSelect').addEventListener('change', () => fetchReport());
 
       const promptInput = document.getElementById('customPrompt');
       const sendBtn = document.getElementById('sendPromptBtn');
