@@ -317,7 +317,7 @@
       }
     }
 
-    // Android-Compatible Direct Blob Download & Chat Push
+    // Telegram & Android Compatible Word Document Downloader
     async function downloadWordDoc() {
       const zone = document.getElementById('zoneSelect').value;
       const week = document.getElementById('weekSelect').value;
@@ -327,7 +327,7 @@
       const textToExport = currentRawMarkdown || reportOutput.innerText;
 
       if (!textToExport || textToExport.trim().length === 0 || textToExport.includes("Select your target Zone")) {
-        alert("Please generate an analysis report first.");
+        alert("Please generate an analysis report first by clicking 'Generate AI Analysis'.");
         return;
       }
 
@@ -345,11 +345,10 @@
         const blob = await response.blob();
         removeTypingIndicator();
 
-        // Android-friendly Blob URL technique
         const url = window.URL.createObjectURL(blob);
         const filename = `RMNCH_Report_${zone}_${week}.docx`.replace(/\s+/g, '_');
 
-        // Render interactive download card in chat
+        // Render interactive download card inside chat stream
         const card = document.createElement('div');
         card.className = "self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg";
         card.innerHTML = `
@@ -362,20 +361,23 @@
               <p class="text-xs text-emerald-700">Feedback Report for ${zone} (${week})</p>
             </div>
           </div>
-          <a href="${url}" download="${filename}" target="_blank" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
+          <button id="realDownloadBtn" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
             <i class="fa-solid fa-download mr-1"></i> Tap to Save .docx
-          </a>
+          </button>
         `;
         reportOutput.appendChild(card);
         reportOutput.scrollTop = reportOutput.scrollHeight;
 
-        // Auto-trigger direct download on supported Android browsers
-        const tempLink = document.createElement('a');
-        tempLink.href = url;
-        tempLink.download = filename;
-        document.body.appendChild(tempLink);
-        tempLink.click();
-        document.body.removeChild(tempLink);
+        // Bind direct user-click action for Telegram Android WebView compliance
+        document.getElementById('realDownloadBtn').addEventListener('click', () => {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        });
 
       } catch (err) {
         removeTypingIndicator();
