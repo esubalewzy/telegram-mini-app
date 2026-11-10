@@ -6,133 +6,285 @@
   <title>SWERHB RMNCH Analytics</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
+    :root {
+      --primary-color: var(--tg-theme-button-color, #2481cc);
+      --primary-text: var(--tg-theme-button-text-color, #ffffff);
+      --bg-color: var(--tg-theme-bg-color, #f4f6f9);
+      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+      --text-color: var(--tg-theme-text-color, #1e293b);
+      --hint-color: var(--tg-theme-hint-color, #94a3b8);
+      --border-color: #e2e8f0;
+      --docx-blue: #1e40af;
+      --docx-hover: #1e3a8a;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
       margin: 0;
       padding: 16px;
-      background-color: var(--tg-theme-bg-color, #ffffff);
-      color: var(--tg-theme-text-color, #000000);
+      background-color: var(--bg-color);
+      color: var(--text-color);
     }
+
     .container {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      max-width: 800px;
+      gap: 14px;
+      max-width: 850px;
       margin: 0 auto;
     }
+
+    .header-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0 0 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 20px;
+      background-color: var(--primary-color);
+      border-radius: 2px;
+    }
+
     .filter-bar {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
     }
+
     select {
       flex: 1;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid var(--tg-theme-hint-color, #ccc);
-      background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
-      color: var(--tg-theme-text-color, #000000);
+      min-width: 200px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      background-color: var(--card-bg);
+      color: var(--text-color);
       font-weight: 600;
+      font-size: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      outline: none;
+      transition: border-color 0.2s;
     }
+
+    select:focus {
+      border-color: var(--primary-color);
+    }
+
     .dashboard-container {
       width: 100%;
       height: 380px;
-      border-radius: 12px;
+      border-radius: 14px;
       overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
     }
+
     iframe { width: 100%; height: 100%; border: 0; }
+
+    .chat-header {
+      font-size: 16px;
+      font-weight: 700;
+      color: #334155;
+      margin: 8px 0 2px 0;
+    }
+
     .chat-container {
       display: flex;
       flex-direction: column;
-      height: 420px;
-      border: 1px solid var(--tg-theme-hint-color, #ccc);
-      border-radius: 12px;
+      height: 440px;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
       overflow: hidden;
+      background-color: var(--card-bg);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
     }
+
     .chat-box {
       flex: 1;
-      padding: 12px;
+      padding: 16px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
+      scroll-behavior: smooth;
     }
+
     .message {
-      max-width: 88%;
-      padding: 10px 14px;
-      border-radius: 12px;
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 14px;
       font-size: 14px;
-      line-height: 1.4;
+      line-height: 1.5;
       white-space: pre-wrap;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      animation: fadeIn 0.25s ease-out;
     }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .user-message {
       align-self: flex-end;
-      background-color: var(--tg-theme-button-color, #2481cc);
-      color: #fff;
+      background-color: var(--primary-color);
+      color: var(--primary-text);
+      border-bottom-right-radius: 4px;
     }
+
     .bot-message {
       align-self: flex-start;
-      background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
+      background-color: #f1f5f9;
+      color: #1e293b;
+      border-bottom-left-radius: 4px;
     }
+
+    /* Interactive pushed document card inside chat */
     .download-card {
       align-self: flex-start;
-      background-color: #e8f5e9;
-      border: 1px solid #a5d6a7;
-      padding: 12px;
-      border-radius: 12px;
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border: 1px solid #bfdbfe;
+      padding: 16px;
+      border-radius: 14px;
       width: 90%;
+      max-width: 420px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(30, 64, 175, 0.08);
+      animation: fadeIn 0.3s ease-out;
     }
+
+    .download-card .card-title {
+      font-weight: 700;
+      color: #1e40af;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .download-card .card-sub {
+      font-size: 12px;
+      color: #3b82f6;
+    }
+
     .download-card a {
-      display: inline-block;
-      padding: 8px 12px;
-      background-color: #2e7d32;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background-color: var(--docx-blue);
       color: #ffffff;
       text-decoration: none;
-      font-weight: bold;
-      border-radius: 6px;
+      font-weight: 600;
+      border-radius: 8px;
       text-align: center;
       font-size: 13px;
+      transition: background-color 0.2s, transform 0.1s;
     }
+
+    .download-card a:hover {
+      background-color: var(--docx-hover);
+    }
+
+    .download-card a:active {
+      transform: scale(0.98);
+    }
+
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px;
+      background-color: #f1f5f9;
+      border-radius: 14px;
+      align-self: flex-start;
+      width: fit-content;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      background-color: #94a3b8;
+      border-radius: 50%;
+      animation: pulse 1.4s infinite ease-in-out both;
+    }
+
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes pulse {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
     .input-area {
       display: flex;
-      padding: 8px;
+      padding: 10px;
       gap: 8px;
-      border-top: 1px solid var(--tg-theme-hint-color, #ccc);
-      background-color: var(--tg-theme-bg-color, #ffffff);
+      border-top: 1px solid var(--border-color);
+      background-color: var(--card-bg);
+      align-items: center;
     }
+
     input {
       flex: 1;
-      padding: 10px;
-      border: 1px solid var(--tg-theme-hint-color, #ccc);
-      border-radius: 8px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
       outline: none;
+      font-size: 14px;
+      background-color: #f8fafc;
+      transition: all 0.2s;
     }
-    input.typing {
-      border-color: var(--tg-theme-button-color, #2481cc);
+
+    input:focus {
+      background-color: #ffffff;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(36, 129, 204, 0.1);
     }
+
     button {
-      padding: 10px 16px;
-      background-color: var(--tg-theme-button-color, #2481cc);
-      color: #fff;
+      padding: 12px 18px;
+      background-color: var(--primary-color);
+      color: var(--primary-text);
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
-      font-weight: bold;
+      font-weight: 600;
+      font-size: 14px;
       white-space: nowrap;
+      transition: background-color 0.2s, opacity 0.2s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
+
+    button:hover:not(:disabled) {
+      opacity: 0.92;
+    }
+
     .btn-docx {
-      background-color: #2b579a;
+      background-color: var(--docx-blue);
+      color: #ffffff;
     }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>SWERHB RMNCH Analytics Dashboard</h2>
+    <h2 class="header-title">SWERHB RMNCH Analytics Dashboard</h2>
     
     <div class="filter-bar">
       <select id="zoneSelect">
@@ -149,13 +301,13 @@
       <iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" allowfullscreen></iframe>
     </div>
 
-    <h3>RMNCH AI Assistant</h3>
+    <h3 class="chat-header">RMNCH AI Assistant</h3>
     <div class="chat-container">
       <div class="chat-box" id="chatBox">
-        <div class="message bot-message">Loading live zones and weeks...</div>
+        <div class="message bot-message">Loading live zones and weeks from Google Sheets...</div>
       </div>
       <div class="input-area">
-        <input type="text" id="userInput" placeholder="Ask a question or request analysis..." oninput="handleUserTyping()" onkeydown="if(event.key==='Enter') sendMessage()" />
+        <input type="text" id="userInput" placeholder="Ask a question or request analysis..." onkeydown="if(event.key==='Enter') sendMessage()" />
         <button id="sendBtn" onclick="sendMessage()">Analyze</button>
         <button id="docxBtn" class="btn-docx" onclick="downloadDocx()" disabled>Download Word Report</button>
       </div>
@@ -167,15 +319,6 @@
     if (tg) { tg.ready(); tg.expand(); }
 
     let lastReportText = "";
-
-    function handleUserTyping() {
-      const inputEl = document.getElementById('userInput');
-      if (inputEl.value.trim().length > 0) {
-        inputEl.classList.add('typing');
-      } else {
-        inputEl.classList.remove('typing');
-      }
-    }
 
     async function loadFilters() {
       try {
@@ -203,7 +346,7 @@
           });
         }
 
-        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Select a Zone and Week above, then click Analyze or ask a question.</div>';
+        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Select a Zone and Week above, then tap <strong>Analyze</strong> or ask any question.</div>';
       } catch (err) {
         console.error('Failed to load filters:', err);
         document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Unable to load zones. Please refresh page.</div>';
@@ -216,6 +359,32 @@
       const inputEl = document.getElementById('userInput');
       const sendBtn = document.getElementById('sendBtn');
       const docxBtn = document.getElementById('docxBtn');
-      const chatBox = document.getElementById('chatBox');
       const zoneSelect = document.getElementById('zoneSelect');
-      const weekSelect = document.getElementById
+      const weekSelect = document.getElementById('weekSelect');
+
+      const messageText = inputEl.value.trim();
+
+      // If user typed "download", push the Word document straight into chat
+      if (messageText.toLowerCase().includes('download') || messageText.toLowerCase().includes('word') || messageText.toLowerCase().includes('docx')) {
+        appendMessage(messageText || "Requesting Word Report...", 'user-message');
+        inputEl.value = '';
+        await downloadDocx();
+        return;
+      }
+
+      const message = messageText || `Generate full RMNCH report.`;
+
+      appendMessage(message, 'user-message');
+      inputEl.value = '';
+
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+      docxBtn.disabled = true;
+
+      const typingDiv = showTypingIndicator();
+
+      try {
+        const user = tg?.initDataUnsafe?.user || {};
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content
