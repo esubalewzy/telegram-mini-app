@@ -425,7 +425,7 @@ async function runRmnchEmailDispatch() {
 }
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 07:45 UTC
-cron.schedule('58 7 * * 1,2,3', async () => {
+cron.schedule('00 8 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
