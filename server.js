@@ -370,7 +370,7 @@ async function runRmnchEmailDispatch() {
       "Dawro": "esubalewzerihun11@gmail.com",
       "West Omo": "esubalewzerihun11@gmail.com",
       "Bench Sheko": "esubalewzerihun11@gmail.com",
-      "Sheka": "esubalewzerihun11@gmail.com",
+      "Sheka": "sifanmesfin@gmail.com",
       "Konta": "esubalewzerihun11@gmail.com"
     };
 
