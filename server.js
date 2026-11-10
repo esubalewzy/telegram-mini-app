@@ -14,16 +14,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 app.use(express.static(__dirname));
-// Start Server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Groq
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
+// Initialize Groq & Brevo keys safely
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
@@ -32,7 +28,7 @@ function parseCSVLine(text) {
   let result = [];
   let current = '';
   let inQuotes = false;
-  
+   
   for (let i = 0; i < text.length; i++) {
     let char = text[i];
     if (char === '"') {
@@ -53,7 +49,7 @@ async function fetchFinalSheetData() {
     const response = await fetch(FINAL_SHEET_CSV_URL);
     if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
     const csvText = await response.text();
-    
+     
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
     if (lines.length === 0) return [];
 
@@ -79,12 +75,12 @@ async function fetchFinalSheetData() {
 function getCurrentReportingWeek(rawData) {
   const baseDate = new Date('2026-11-09'); // Week 19 start anchor
   const baseWeekNumber = 19;
-  
+   
   const currentDate = new Date();
   const diffTime = currentDate - baseDate;
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
   const diffWeeks = Math.floor(diffDays / 7);
-  
+   
   const calculatedWeekNum = baseWeekNumber + Math.max(0, diffWeeks);
   const targetWeekQuery = `Week ${calculatedWeekNum}`;
 
@@ -101,7 +97,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Health check endpoint for UptimeRobot keep-alive
+// Health check endpoint for Render & UptimeRobot keep-alive
 app.get('/health', (req, res) => {
   res.status(200).send('OK - Server is awake');
 });
@@ -329,7 +325,7 @@ async function sendViaBrevo(toEmail, subject, textBody) {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      sender: { name: "RMNCH System", email: "esubalewzerihun11@gmail.com" }, // Your verified sender email in Brevo
+      sender: { name: "RMNCH System", email: "esubalewzerihun11@gmail.com" },
       to: [{ email: toEmail }],
       subject: subject,
       textContent: textBody
@@ -343,14 +339,7 @@ async function sendViaBrevo(toEmail, subject, textBody) {
   return await response.json();
 }
 
-
-
-
-
-
-
-
-// Main email dispatch function using Brevo API
+// Main email dispatch function using Brevo API (Strictly Zone-Filtered)
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
@@ -367,7 +356,6 @@ async function runRmnchEmailDispatch() {
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
-    // Map each zone to its respective email recipient (including regional leadership if they need individual zone reports)
     const zonalEmails = {
       "Kaffa": "esubalewzerihun37@gmail.com",
       "Dawro": "esubalewzerihun11@gmail.com",
@@ -377,14 +365,12 @@ async function runRmnchEmailDispatch() {
       "Konta": "esubalewzerihun11@gmail.com"
     };
 
-    // If regional leadership wants individual reports for EACH zone separately:
     const regionalEmail = "esubalewzerihun11@gmail.com";
 
     // Loop through each zone and send strictly zone-filtered reports
     for (const zone of zones) {
       const recipientEmail = zonalEmails[zone] || regionalEmail;
 
-      // STRICT ZONE FILTERING: Only rows matching this specific zone and week
       const zoneData = rawData.filter(r => 
         r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
         r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase())
@@ -399,13 +385,11 @@ async function runRmnchEmailDispatch() {
       let zonalBody = '';
 
       if (dayOfWeek === 1 || dayOfWeek === 2) {
-        // MON & TUE: Only Reporting Rate and Non-Reporting Woredas List for this specific zone
         zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} Zone (${currentWeek}).\n\n` +
                     `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
                     `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
                     `Note: Complete analytical breakdown and feedback will be dispatched on Wednesday.`;
       } else {
-        // WEDNESDAY: Full Individualized Complete Analysis strictly for this zone
         zonalBody = await generateAiReport(zone, zoneData, reportingRateStr, zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda), '', {}, {}, [], [], [], currentWeek);
       }
 
@@ -428,8 +412,23 @@ async function runRmnchEmailDispatch() {
   }
 }
 
+// Instant test endpoint
+app.get('/api/test-email', async (req, res) => {
+  try {
+    await runRmnchEmailDispatch();
+    res.send('RMNCH email dispatch executed successfully via Brevo!');
+  } catch (err) {
+    res.status(500).send('Error executing email dispatch: ' + err.message);
+  }
+});
+
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 07:45 UTC
-cron.schedule('10 8 * * 1,2,3', async () => {
+cron.schedule('12 8 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
+});
+
+// Start Server - Bound explicitly to '0.0.0.0' for Render
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
