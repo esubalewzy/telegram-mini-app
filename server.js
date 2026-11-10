@@ -364,7 +364,7 @@ async function runRmnchEmailDispatch() {
       "kaffa zone": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
       "dawro zone": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
       "west omo zone": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
-      "bench sheko zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
+      "bench sheko zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com", "ruphaelw@gmail.com"],
       "sheka zone": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
       "konta zone": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
