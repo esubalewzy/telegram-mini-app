@@ -72,10 +72,10 @@
     </main>
 
     <script>
-        // Dynamically determine API base URL (uses current domain when hosted on Render, falls back if needed)
+        // Use your live Render URL as the base URL to prevent "Failed to connect to server" errors on mobile/standalone views
         const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
             ? '' 
-            : '';
+            : 'https://telegram-mini-app-h11t.onrender.com';
 
         // Load filters on startup
         window.addEventListener('DOMContentLoaded', async () => {
@@ -157,7 +157,7 @@
             }
         }
 
-        // Direct chat bot download generator compatible with Android mobile browsers
+        // Direct chat bot download generator fully compatible with Android mobile browsers
         async function requestChatDocxDownload() {
             const reportText = document.getElementById('reportOutput').innerText;
             const title = "Weekly Essential RMNCH Service Report Feedback";
@@ -175,20 +175,31 @@
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 
-                // Render a direct download action card inside the chat flow with direct anchor click
+                // Trigger download directly via programmatic click for mobile support
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'RMNCH_Service_Report_Feedback.docx';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Render action card in chat area as secondary fallback
                 const downloadCard = document.createElement('div');
                 downloadCard.className = 'my-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs';
                 downloadCard.innerHTML = `
                     <div class="text-emerald-900">
                         <p class="font-bold text-sm">Word Document Ready!</p>
-                        <p class="text-xs text-emerald-700">Click below to download your RMNCH feedback report.</p>
+                        <p class="text-xs text-emerald-700">If your download didn't start automatically, tap below.</p>
                     </div>
-                    <a href="${url}" download="RMNCH_Service_Report_Feedback.docx" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition whitespace-nowrap">
-                        Download .docx File Now
+                    <a href="${url}" download="RMNCH_Service_Report_Feedback.docx" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition whitespace-nowrap">
+                        Download .docx File
                     </a>
                 `;
                 outputDiv.appendChild(downloadCard);
                 outputDiv.scrollTop = outputDiv.scrollHeight;
+
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                }, 100);
 
             } catch (err) {
                 const errCard = document.createElement('div');
