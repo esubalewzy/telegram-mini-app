@@ -368,7 +368,7 @@
         reportOutput.appendChild(card);
         reportOutput.scrollTop = reportOutput.scrollHeight;
 
-        // Bind direct user-click action for Telegram Android WebView compliance
+        // Bind direct user-click action optimized for Telegram Android WebViews
         document.getElementById('realDownloadBtn').addEventListener('click', () => {
           const a = document.createElement('a');
           a.href = url;
