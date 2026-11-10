@@ -361,12 +361,12 @@ async function runRmnchEmailDispatch() {
 
     // Lowercased zone keys to ensure exact matching regardless of sheet case variations
     const zonalEmails = {
-      "kaffa": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
-      "dawro": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
-      "west omo": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
-      "bench sheko": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
-      "sheka": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
-      "konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
+      "Kaffa Zone": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Dawro Zone": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
+      "West Omo Zone": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Bench Sheko Zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
+      "Sheka Zone": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Konta Zone": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
 
     // Regional leadership email(s) for Wednesday Grand Total
@@ -466,7 +466,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC
-cron.schedule('35 15 * * 1,2,3', async () => {
+cron.schedule('45 15 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
