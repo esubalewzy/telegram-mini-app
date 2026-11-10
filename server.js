@@ -342,7 +342,7 @@ async function sendViaBrevo(toInput, subject, textBody) {
   return await response.json();
 }
 
-// Main email dispatch function with normalized lowercase zone matching
+// Main email dispatch function with updated zone keys including "zone"
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
@@ -359,14 +359,14 @@ async function runRmnchEmailDispatch() {
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
-    // Lowercased zone keys to ensure exact matching regardless of sheet case variations
+    // Updated keys to include "zone" to match Google Sheet names precisely
     const zonalEmails = {
-      "Kaffa Zone": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Dawro Zone": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
-      "West Omo Zone": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Bench Sheko Zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
-      "Sheka Zone": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Konta Zone": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
+      "kaffa zone": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
+      "dawro zone": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
+      "west omo zone": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
+      "bench sheko zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
+      "sheka zone": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
+      "konta zone": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
 
     // Regional leadership email(s) for Wednesday Grand Total
@@ -396,7 +396,7 @@ async function runRmnchEmailDispatch() {
       let zonalBody = '';
 
       if (dayOfWeek === 1 || dayOfWeek === 2) {
-        zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} Zone (${currentWeek}).\n\n` +
+        zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} (${currentWeek}).\n\n` +
                     `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
                     `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
                     `Note: Complete analytical breakdown and feedback will be dispatched on Wednesday.`;
@@ -407,10 +407,10 @@ async function runRmnchEmailDispatch() {
       try {
         const result = await sendViaBrevo(
           recipientEmail,
-          `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} Zone - ${currentWeek}`,
+          `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} - ${currentWeek}`,
           zonalBody
         );
-        console.log(`[Brevo] Sent ${currentWeek} report for ${zone} zone. Message ID: ${result.messageId}`);
+        console.log(`[Brevo] Sent ${currentWeek} report for ${zone}. Message ID: ${result.messageId}`);
       } catch (err) {
         console.error(`❌ [Brevo Error for ${zone}]:`, err.message);
       }
@@ -466,7 +466,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC
-cron.schedule('45 15 * * 1,2,3', async () => {
+cron.schedule('51 15 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
