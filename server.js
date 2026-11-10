@@ -342,7 +342,8 @@ async function sendViaBrevo(toInput, subject, textBody) {
   return await response.json();
 }
 
-// Main email dispatch function using Brevo API (Strictly Zone-Filtered)
+
+// Main email dispatch function using Brevo API (Strictly Zone-Filtered + Conditional Regional Wednesday Report)
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
@@ -368,11 +369,12 @@ async function runRmnchEmailDispatch() {
       "Konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
 
-    const regionalEmail = "esubalewzerihun11@gmail.com";
+    // Regional leadership email(s)
+    const regionalEmails = ["esubalewzerihun11@gmail.com"];
 
-    // Loop through each zone and send strictly zone-filtered reports
+    // 1. Loop through each zone and send zone-filtered reports (Runs Mon, Tue, Wed)
     for (const zone of zones) {
-      const recipientEmail = zonalEmails[zone] || regionalEmail;
+      const recipientEmail = zonalEmails[zone] || regionalEmails;
 
       const zoneData = rawData.filter(r => 
         r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
@@ -405,6 +407,38 @@ async function runRmnchEmailDispatch() {
         console.log(`[Brevo] Sent ${currentWeek} report for ${zone} zone. Message ID: ${result.messageId}`);
       } catch (err) {
         console.error(`❌ [Brevo Error for ${zone}]:`, err.message);
+      }
+    }
+
+    // 2. Send Grand Total Regional Report ONLY on Wednesday (dayOfWeek === 3)
+    if (dayOfWeek === 3) {
+      console.log(`[Dispatch] Wednesday detected: Generating Regional Grand Total Report...`);
+      
+      const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
+      const regTotalExpected = regionalData.length;
+      const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+      const regReportingRateVal = regTotalExpected > 0 ? (regReported.length / regTotalExpected) * 100 : 0;
+      const regReportingRateStr = regReportingRateVal.toFixed(1) + '%';
+      const regNonReporting = regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`).join(', ') || 'None';
+
+      const regionalBody = await generateAiReport(
+        'Grand Total', 
+        regionalData, 
+        regReportingRateStr, 
+        regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => `${r.Zone} (${r.Woreda})`), 
+        '', {}, {}, [], [], [], 
+        currentWeek
+      );
+
+      try {
+        const regResult = await sendViaBrevo(
+          regionalEmails,
+          `[Feedback & Analysis] Regional Grand Total RMNCH Report - ${currentWeek}`,
+          regionalBody
+        );
+        console.log(`[Brevo] Sent Regional Grand Total report to leadership. Message ID: ${regResult.messageId}`);
+      } catch (err) {
+        console.error(`❌ [Brevo Error for Regional Leadership]:`, err.message);
       }
     }
 
