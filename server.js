@@ -366,12 +366,12 @@ async function runRmnchEmailDispatch() {
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
     const zonalEmails = {
-      "Kaffa": "esubalewzerihun37@gmail.com",
-      "Dawro": "esubalewzerihun11@gmail.com",
-      "West Omo": "esubalewzerihun11@gmail.com",
-      "Bench Sheko": "esubalewzerihun11@gmail.com",
-      "Sheka": "sifanmesfin@gmail.com",
-      "Konta": "esubalewzerihun11@gmail.com"
+      "Kaffa": ["esubalewzerihun37@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Dawro": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
+      "West Omo": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Bench Sheko": ["Joannagashahun13@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Sheka": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
+      "Konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
 
     const regionalEmail = "esubalewzerihun11@gmail.com";
