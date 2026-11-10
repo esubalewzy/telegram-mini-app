@@ -460,7 +460,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 10:30 UTC
-cron.schedule('45 10 * * 1,2,3', async () => {
+cron.schedule('35 14 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
