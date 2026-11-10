@@ -342,8 +342,7 @@ async function sendViaBrevo(toInput, subject, textBody) {
   return await response.json();
 }
 
-
-// Main email dispatch function using Brevo API (Strictly Zone-Filtered + Conditional Regional Wednesday Report)
+// Main email dispatch function with normalized lowercase zone matching
 async function runRmnchEmailDispatch() {
   console.log(`[RMNCH Email Dispatch] Starting execution via Brevo...`);
 
@@ -360,24 +359,31 @@ async function runRmnchEmailDispatch() {
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
+    // Lowercased zone keys to ensure exact matching regardless of sheet case variations
     const zonalEmails = {
-      "Kaffa": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Dawro": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
-      "West Omo": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Bench Sheko": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
-      "Sheka": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
-      "Konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
+      "kaffa": ["tadessebelay1221@gmail.com", "esubalewzerihun37@gmail.com"],
+      "dawro": ["ketesfu7@gmail.com", "esubalewzerihun37@gmail.com"],
+      "west omo": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
+      "bench sheko": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com"],
+      "sheka": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
+      "konta": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
     };
 
-    // Regional leadership email(s)
+    // Regional leadership email(s) for Wednesday Grand Total
     const regionalEmails = ["esubalewzerihun11@gmail.com"];
 
-    // 1. Loop through each zone and send zone-filtered reports (Runs Mon, Tue, Wed)
+    // 1. Loop through each zone and send strictly zone-filtered reports to zonal coordinators (Mon, Tue, Wed)
     for (const zone of zones) {
-      const recipientEmail = zonalEmails[zone] || regionalEmails;
+      const cleanZoneKey = zone.toString().trim().toLowerCase();
+      const recipientEmail = zonalEmails[cleanZoneKey];
+
+      if (!recipientEmail) {
+        console.warn(`⚠️ [Dispatch] No email configuration found for zone: "${zone}". Skipping.`);
+        continue;
+      }
 
       const zoneData = rawData.filter(r => 
-        r.Zone && r.Zone.toLowerCase() === zone.toLowerCase() &&
+        r.Zone && r.Zone.toString().trim().toLowerCase() === cleanZoneKey &&
         r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase())
       );
 
@@ -410,9 +416,9 @@ async function runRmnchEmailDispatch() {
       }
     }
 
-    // 2. Send Grand Total Regional Report ONLY on Wednesday (dayOfWeek === 3)
+    // 2. Send Grand Total Regional Report ONLY on Wednesday (dayOfWeek === 3) to Regional Leadership
     if (dayOfWeek === 3) {
-      console.log(`[Dispatch] Wednesday detected: Generating Regional Grand Total Report...`);
+      console.log(`[Dispatch] Wednesday detected: Generating Regional Grand Total Report for leadership...`);
       
       const regionalData = rawData.filter(r => r.Week && r.Week.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
       const regTotalExpected = regionalData.length;
@@ -459,8 +465,8 @@ app.get('/api/test-email', async (req, res) => {
   }
 });
 
-// Scheduled Cron Job: Runs Mon, Tue, Wed at 10:30 UTC
-cron.schedule('35 14 * * 1,2,3', async () => {
+// Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC
+cron.schedule('35 15 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
