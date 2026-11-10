@@ -1,390 +1,267 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SWERHB RMNCH Analytics</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Essential RMNCH Service Reporting Feedback System</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Marked.js for parsing Markdown tables & formatting -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+
   <style>
-    :root {
-      --primary-color: var(--tg-theme-button-color, #2481cc);
-      --primary-text: var(--tg-theme-button-text-color, #ffffff);
-      --bg-color: var(--tg-theme-bg-color, #f4f6f9);
-      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
-      --text-color: var(--tg-theme-text-color, #1e293b);
-      --hint-color: var(--tg-theme-hint-color, #94a3b8);
-      --border-color: #e2e8f0;
-      --docx-blue: #1e40af;
-      --docx-hover: #1e3a8a;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      margin: 0;
-      padding: 16px;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      max-width: 850px;
-      margin: 0 auto;
-    }
-
-    .header-title {
-      font-size: 20px;
-      font-weight: 700;
-      color: #0f172a;
-      margin: 0 0 4px 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .header-title::before {
-      content: '';
-      display: inline-block;
-      width: 4px;
-      height: 20px;
-      background-color: var(--primary-color);
-      border-radius: 2px;
-    }
-
-    .filter-bar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    select {
-      flex: 1;
-      min-width: 200px;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid var(--border-color);
-      background-color: var(--card-bg);
-      color: var(--text-color);
-      font-weight: 600;
-      font-size: 14px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    select:focus {
-      border-color: var(--primary-color);
-    }
-
-    .dashboard-container {
+    /* Table Styling for Markdown Output */
+    .markdown-body table {
       width: 100%;
-      height: 380px;
-      border-radius: 14px;
-      overflow: hidden;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-      background-color: var(--card-bg);
-      border: 1px solid var(--border-color);
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.9rem;
     }
-
-    iframe { width: 100%; height: 100%; border: 0; }
-
-    .chat-header {
-      font-size: 16px;
-      font-weight: 700;
-      color: #334155;
-      margin: 8px 0 2px 0;
-    }
-
-    .chat-container {
-      display: flex;
-      flex-direction: column;
-      height: 440px;
-      border: 1px solid var(--border-color);
-      border-radius: 14px;
-      overflow: hidden;
-      background-color: var(--card-bg);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-    }
-
-    .chat-box {
-      flex: 1;
-      padding: 16px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      scroll-behavior: smooth;
-    }
-
-    .message {
-      max-width: 85%;
-      padding: 12px 16px;
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-      animation: fadeIn 0.25s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .user-message {
-      align-self: flex-end;
-      background-color: var(--primary-color);
-      color: var(--primary-text);
-      border-bottom-right-radius: 4px;
-    }
-
-    .bot-message {
-      align-self: flex-start;
-      background-color: #f1f5f9;
-      color: #1e293b;
-      border-bottom-left-radius: 4px;
-    }
-
-    /* Interactive pushed document card inside chat */
-    .download-card {
-      align-self: flex-start;
-      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-      border: 1px solid #bfdbfe;
-      padding: 16px;
-      border-radius: 14px;
-      width: 90%;
-      max-width: 420px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      box-shadow: 0 2px 8px rgba(30, 64, 175, 0.08);
-      animation: fadeIn 0.3s ease-out;
-    }
-
-    .download-card .card-title {
-      font-weight: 700;
-      color: #1e40af;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .download-card .card-sub {
-      font-size: 12px;
-      color: #3b82f6;
-    }
-
-    .download-card a {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 16px;
-      background-color: var(--docx-blue);
+    .markdown-body th {
+      background-color: #1f4e78;
       color: #ffffff;
-      text-decoration: none;
-      font-weight: 600;
-      border-radius: 8px;
-      text-align: center;
-      font-size: 13px;
-      transition: background-color 0.2s, transform 0.1s;
+      padding: 0.6rem;
+      border: 1px solid #cbd5e1;
+      text-align: left;
     }
-
-    .download-card a:hover {
-      background-color: var(--docx-hover);
+    .markdown-body td {
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
     }
-
-    .download-card a:active {
-      transform: scale(0.98);
-    }
-
-    .typing-indicator {
-      display: flex;
-      gap: 4px;
-      padding: 12px 16px;
-      background-color: #f1f5f9;
-      border-radius: 14px;
-      align-self: flex-start;
-      width: fit-content;
-    }
-
-    .typing-dot {
-      width: 6px;
-      height: 6px;
-      background-color: #94a3b8;
-      border-radius: 50%;
-      animation: pulse 1.4s infinite ease-in-out both;
-    }
-
-    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-
-    @keyframes pulse {
-      0%, 80%, 100% { transform: scale(0); }
-      40% { transform: scale(1); }
-    }
-
-    .input-area {
-      display: flex;
-      padding: 10px;
-      gap: 8px;
-      border-top: 1px solid var(--border-color);
-      background-color: var(--card-bg);
-      align-items: center;
-    }
-
-    input {
-      flex: 1;
-      padding: 12px 14px;
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      outline: none;
-      font-size: 14px;
+    .markdown-body tr:nth-child(even) {
       background-color: #f8fafc;
-      transition: all 0.2s;
     }
-
-    input:focus {
-      background-color: #ffffff;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(36, 129, 204, 0.1);
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+      font-weight: 700;
+      margin-top: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: #0f172a;
     }
-
-    button {
-      padding: 12px 18px;
-      background-color: var(--primary-color);
-      color: var(--primary-text);
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 14px;
-      white-space: nowrap;
-      transition: background-color 0.2s, opacity 0.2s;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-
-    button:hover:not(:disabled) {
-      opacity: 0.92;
-    }
-
-    .btn-docx {
-      background-color: var(--docx-blue);
-      color: #ffffff;
-    }
-
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
-<body>
-  <div class="container">
-    <h2 class="header-title">SWERHB RMNCH Analytics Dashboard</h2>
-    
-    <div class="filter-bar">
-      <select id="zoneSelect">
-        <option value="Grand Total">Grand Total (All Zones)</option>
-      </select>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col font-sans">
 
-      <select id="weekSelect">
-        <option value="All Weeks">All Weeks</option>
-      </select>
-    </div>
-
-    <!-- Looker Studio Dashboard View -->
-    <div class="dashboard-container">
-      <iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" allowfullscreen></iframe>
-    </div>
-
-    <h3 class="chat-header">RMNCH AI Assistant</h3>
-    <div class="chat-container">
-      <div class="chat-box" id="chatBox">
-        <div class="message bot-message">Loading live zones and weeks from Google Sheets...</div>
+  <!-- Navigation Bar -->
+  <header class="bg-blue-900 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-2">
+      <div class="flex items-center space-x-3">
+        <i class="fa-solid fa-hospital-user text-2xl text-blue-300"></i>
+        <div>
+          <h1 class="text-xl font-bold tracking-wide">RMNCH Analytics & Feedback Hub</h1>
+          <p class="text-xs text-blue-200">Automated Weekly Health Monitoring System</p>
+        </div>
       </div>
-      <div class="input-area">
-        <input type="text" id="userInput" placeholder="Ask a question or request analysis..." onkeydown="if(event.key==='Enter') sendMessage()" />
-        <button id="sendBtn" onclick="sendMessage()">Analyze</button>
-        <button id="docxBtn" class="btn-docx" onclick="downloadDocx()" disabled>Download Word Report</button>
+      <div class="flex items-center space-x-2 text-xs bg-blue-800 px-3 py-1.5 rounded-lg border border-blue-700">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Google Sheets Connected</span>
       </div>
     </div>
-  </div>
+  </header>
 
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
+
+    <!-- Sidebar Filters & Export Actions -->
+    <aside class="lg:col-span-1 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-5 h-fit">
+      <div>
+        <h2 class="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-filter text-blue-600"></i> Report Controls
+        </h2>
+
+        <!-- Zone Selector -->
+        <label class="block text-xs font-medium text-slate-600 mb-1">Target Zone</label>
+        <select id="zoneSelect" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none mb-3">
+          <option value="Grand Total">Grand Total (All Zones)</option>
+        </select>
+
+        <!-- Week Selector -->
+        <label class="block text-xs font-medium text-slate-600 mb-1">Reporting Week</label>
+        <select id="weekSelect" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none mb-4">
+          <option value="All Weeks">All Weeks</option>
+        </select>
+
+        <!-- Generate Full Report Button -->
+        <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Analysis
+        </button>
+      </div>
+
+      <hr class="border-slate-200" />
+
+      <!-- Export Options -->
+      <div>
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Export Tools</h3>
+        <button id="exportDocxBtn" class="w-full bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50" disabled>
+          <i class="fa-solid fa-file-word text-blue-400"></i> Export to Word (.docx)
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Output & Interactive Interface -->
+    <section class="lg:col-span-3 flex flex-col gap-4">
+
+      <!-- Display Box -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-[500px]">
+        <!-- Box Header -->
+        <div class="border-b border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
+          <h2 class="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <i class="fa-solid fa-chart-line text-blue-600"></i> Analytics Feedback Output
+          </h2>
+          <span id="statusBadge" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200">Ready</span>
+        </div>
+
+        <!-- Output Content Area -->
+        <div id="reportOutput" class="p-6 overflow-y-auto flex-1 markdown-body text-slate-700 leading-relaxed">
+          <div class="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-16">
+            <i class="fa-solid fa-file-invoice text-4xl text-slate-300"></i>
+            <p class="text-sm">Select a Zone and Week, then click <strong>"Generate AI Analysis"</strong> to produce the feedback report.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Prompt Input Box -->
+      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex gap-2 items-center">
+        <input type="text" id="customPrompt" placeholder="Ask follow-up questions or refine performance indicators..." class="flex-1 bg-slate-50 border border-slate-300 text-sm rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+        <button id="sendPromptBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors flex items-center gap-2">
+          <i class="fa-solid fa-paper-plane"></i> Send
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- JavaScript Integration -->
   <script>
-    const tg = window.Telegram?.WebApp;
-    if (tg) { tg.ready(); tg.expand(); }
+    let currentRawMarkdown = "";
 
-    let lastReportText = "";
-
+    // Load available dynamic filters from backend on page startup
     async function loadFilters() {
       try {
-        const res = await fetch('/api/filters');
-        const data = await res.json();
-        
+        const response = await fetch('/api/filters');
+        const data = await response.json();
+
         const zoneSelect = document.getElementById('zoneSelect');
         const weekSelect = document.getElementById('weekSelect');
 
         if (data.zones && data.zones.length > 0) {
           data.zones.forEach(zone => {
-            const opt = document.createElement('option');
-            opt.value = zone;
-            opt.textContent = zone;
-            zoneSelect.appendChild(opt);
+            const option = document.createElement('option');
+            option.value = zone;
+            option.textContent = zone;
+            zoneSelect.appendChild(option);
           });
         }
 
         if (data.weeks && data.weeks.length > 0) {
           data.weeks.forEach(week => {
-            const opt = document.createElement('option');
-            opt.value = week;
-            opt.textContent = week;
-            weekSelect.appendChild(opt);
+            const option = document.createElement('option');
+            option.value = week;
+            option.textContent = week;
+            weekSelect.appendChild(option);
           });
         }
-
-        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Select a Zone and Week above, then tap <strong>Analyze</strong> or ask any question.</div>';
       } catch (err) {
-        console.error('Failed to load filters:', err);
-        document.getElementById('chatBox').innerHTML = '<div class="message bot-message">Unable to load zones. Please refresh page.</div>';
+        console.error("Failed to load spreadsheet filters:", err);
       }
     }
 
-    loadFilters();
+    // Trigger report request
+    async function fetchReport(userPrompt = null) {
+      const zone = document.getElementById('zoneSelect').value;
+      const week = document.getElementById('weekSelect').value;
+      const reportOutput = document.getElementById('reportOutput');
+      const statusBadge = document.getElementById('statusBadge');
+      const exportBtn = document.getElementById('exportDocxBtn');
 
-    async function sendMessage() {
-      const inputEl = document.getElementById('userInput');
-      const sendBtn = document.getElementById('sendBtn');
-      const docxBtn = document.getElementById('docxBtn');
-      const zoneSelect = document.getElementById('zoneSelect');
-      const weekSelect = document.getElementById('weekSelect');
+      statusBadge.textContent = "Analyzing...";
+      statusBadge.className = "text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse";
 
-      const messageText = inputEl.value.trim();
-
-      // If user typed "download", push the Word document straight into chat
-      if (messageText.toLowerCase().includes('download') || messageText.toLowerCase().includes('word') || messageText.toLowerCase().includes('docx')) {
-        appendMessage(messageText || "Requesting Word Report...", 'user-message');
-        inputEl.value = '';
-        await downloadDocx();
-        return;
-      }
-
-      const message = messageText || `Generate full RMNCH report.`;
-
-      appendMessage(message, 'user-message');
-      inputEl.value = '';
-
-      inputEl.disabled = true;
-      sendBtn.disabled = true;
-      docxBtn.disabled = true;
-
-      const typingDiv = showTypingIndicator();
+      reportOutput.innerHTML = `
+        <div class="h-full flex flex-col items-center justify-center text-slate-500 gap-3 py-16">
+          <i class="fa-solid fa-spinner fa-spin text-3xl text-blue-600"></i>
+          <p class="text-sm font-medium">Fetching sheet data and running Groq AI analysis...</p>
+        </div>
+      `;
 
       try {
-        const user = tg?.initDataUnsafe?.user || {};
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userPrompt || "Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.",
+            selectedZone: zone,
+            selectedWeek: week
+          })
+        });
+
+        const data = await response.json();
+        currentRawMarkdown = data.reply || "No feedback generated.";
+
+        // Render formatted Markdown Output
+        reportOutput.innerHTML = marked.parse(currentRawMarkdown);
+
+        statusBadge.textContent = "Complete";
+        statusBadge.className = "text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full border border-emerald-200";
+
+        // Enable Word Export Button
+        exportBtn.disabled = false;
+
+      } catch (err) {
+        reportOutput.innerHTML = `<div class="text-red-500 p-4">Error loading report: ${err.message}</div>`;
+        statusBadge.textContent = "Error";
+        statusBadge.className = "text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full border border-red-200";
+      }
+    }
+
+    // Handle Word Export
+    async function downloadWordDoc() {
+      if (!currentRawMarkdown) return;
+
+      const zone = document.getElementById('zoneSelect').value;
+      const week = document.getElementById('weekSelect').value;
+      const title = `Weekly RMNCH Feedback - ${zone} (${week})`;
+
+      try {
+        const response = await fetch('/api/export-docx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportText: currentRawMarkdown, title: title })
+        });
+
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `RMNCH_Report_${zone}_${week}.docx`.replace(/\s+/g, '_');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (err) {
+        alert("Failed to export Word document: " + err.message);
+      }
+    }
+
+    // Event Listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      loadFilters();
+
+      document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
+      document.getElementById('exportDocxBtn').addEventListener('click', downloadWordDoc);
+
+      document.getElementById('sendPromptBtn').addEventListener('click', () => {
+        const promptInput = document.getElementById('customPrompt');
+        if (promptInput.value.trim()) {
+          fetchReport(promptInput.value.trim());
+          promptInput.value = '';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
