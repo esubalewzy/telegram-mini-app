@@ -315,8 +315,17 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
+
+
+
+
+
+
+
 // Helper function to send email via Brevo REST API
 async function sendViaBrevo(toEmail, subject, textBody) {
+   const recipients = Array.isArray(toEmails) ? toEmails : [toEmails];
+  const toList = recipients.map(email => ({ email }));
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
