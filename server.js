@@ -366,7 +366,7 @@ async function runRmnchEmailDispatch() {
       "west omo zone": ["esubalewzerihun11@gmail.com", "esubalewzerihun37@gmail.com"],
       "bench sheko zone": ["Joannagashahun13@gmail.com", "habtekelbi78@gmail.com", "ruphaelw@gmail.com"],
       "sheka zone": ["sifanmesfin@gmail.com", "esubalewzerihun37@gmail.com"],
-      "konta zone": ["tsegabebe2015@gmail.com", "esubalewzerihun37@gmail.com"]
+      "konta zone": ["tsegabebe2015@gmail.com", "degemukidist365@gmail.com"]
     };
 
     // Regional leadership email(s) for Wednesday Grand Total
@@ -466,7 +466,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 14:35 UTC
-cron.schedule('30 7 * * 1,2,3', async () => {
+cron.schedule('30 10 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
