@@ -357,7 +357,7 @@ async function runRmnchEmailDispatch() {
     const dayOfWeek = new Date().getDay(); // 1 = Mon, 2 = Tue, 3 = Wed
 
     const zonalEmails = {
-      "Kaffa": "esubalewzerihun11@gmail.com",
+      "Kaffa": "esubalewzerihun37@gmail.com",
       "Dawro": "esubalewzerihun11@gmail.com",
       "West Omo": "esubalewzerihun11@gmail.com",
       "Bench Sheko": "esubalewzerihun11@gmail.com",
@@ -365,7 +365,7 @@ async function runRmnchEmailDispatch() {
       "Konta": "esubalewzerihun11@gmail.com"
     };
 
-    const regionalEmail = "esubalewzerihun37@gmail.com";
+    const regionalEmail = "esubalewzerihun11@gmail.com";
 
     // 1. Send Individualized Zonal Reports
     for (const zone of zones) {
@@ -456,7 +456,7 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 // Scheduled Cron Job: Runs Mon, Tue, Wed at 20:55 UTC
-cron.schedule('30 10 * * 1,2,3', async () => {
+cron.schedule('45 7 * * 1,2,3', async () => {
   console.log('[CRON Triggered] Running scheduled RMNCH email dispatch...');
   await runRmnchEmailDispatch();
 });
