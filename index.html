@@ -72,8 +72,10 @@
     </main>
 
     <script>
-        // Define your backend API base URL
-        const API_BASE_URL = 'https://telegram-mini-app-h11t.onrender.com';
+        // Dynamically determine API base URL (uses current domain when hosted on Render, falls back if needed)
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? '' 
+            : '';
 
         // Load filters on startup
         window.addEventListener('DOMContentLoaded', async () => {
@@ -122,14 +124,15 @@
         async function triggerAnalysis() {
             const selectedZone = document.getElementById('zoneSelect').value;
             const selectedWeek = document.getElementById('weekSelect').value;
-            const userMessage = document.getElementById('userInput').value.trim();
+            const inputField = document.getElementById('userInput');
+            const userMessage = inputField.value.trim();
             const outputDiv = document.getElementById('reportOutput');
 
             // Check if user requested document download via chat text
             if (userMessage.toLowerCase().includes('download') || userMessage.toLowerCase().includes('word') || userMessage.toLowerCase().includes('docx')) {
                 outputDiv.innerHTML += `<div class="p-4 my-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 font-medium">Preparing your Word document for chat download...</div>`;
                 await requestChatDocxDownload();
-                document.getElementById('userInput.value') = '';
+                inputField.value = '';
                 return;
             }
 
@@ -150,11 +153,11 @@
                 }
             } catch (err) {
                 console.error('Analysis Error:', err);
-                outputDiv.innerHTML = '<p class="text-red-500 font-medium">Failed to connect to server.</p>';
+                outputDiv.innerHTML = '<p class="text-red-500 font-medium">Failed to connect to server. Please check your connection or try again.</p>';
             }
         }
 
-        // Direct chat bot download generator for Android devices
+        // Direct chat bot download generator compatible with Android mobile browsers
         async function requestChatDocxDownload() {
             const reportText = document.getElementById('reportOutput').innerText;
             const title = "Weekly Essential RMNCH Service Report Feedback";
@@ -172,7 +175,7 @@
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 
-                // Render a direct download action card inside the chat flow
+                // Render a direct download action card inside the chat flow with direct anchor click
                 const downloadCard = document.createElement('div');
                 downloadCard.className = 'my-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs';
                 downloadCard.innerHTML = `
@@ -180,7 +183,7 @@
                         <p class="font-bold text-sm">Word Document Ready!</p>
                         <p class="text-xs text-emerald-700">Click below to download your RMNCH feedback report.</p>
                     </div>
-                    <a href="${url}" download="RMNCH_Service_Report_Feedback.docx" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition whitespace-nowrap">
+                    <a href="${url}" download="RMNCH_Service_Report_Feedback.docx" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition whitespace-nowrap">
                         Download .docx File Now
                     </a>
                 `;
@@ -223,9 +226,6 @@
                         html += `<${tag} class="${cls}">${cell}</${tag}>`;
                     });
                     html += '</tr>';
-                    if (inTable && html.indexOf('<tbody>') === -1 && !line.includes('---')) {
-                        // switch to tbody after header row
-                    }
                 } else {
                     if (inTable) {
                         html += '</table></div>';
