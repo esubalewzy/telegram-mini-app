@@ -325,7 +325,7 @@ async function sendViaBrevo(toEmail, subject, textBody) {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      sender: { name: "RMNCH System", email: "esubalewzerihun11@gmail.com" },
+      sender: { name: "Dr. Esubalew Zerihun", email: "esubalewzerihun11@gmail.com" },
       to: [{ email: toEmail }],
       subject: subject,
       textContent: textBody
