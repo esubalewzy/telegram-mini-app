@@ -1,450 +1,495 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
   <meta charset="UTF-8" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
   <title>Essential RMNCH Service Reporting Feedback System</title>
 
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Marked.js for rendering Markdown tables & formatting -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-  <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 
-  <!-- Telegram WebApp Integration -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <style>
+
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     body { font-family: 'Inter', sans-serif; }
 
     .custom-scroll::-webkit-scrollbar { width: 6px; }
+
     .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+
     .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
     .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-    .markdown-body table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 1.25rem 0;
-      font-size: 0.875rem;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .markdown-body th {
-      background-color: #1e3a8a;
-      color: #ffffff;
-      padding: 0.75rem;
-      font-weight: 600;
-      border: 1px solid #93c5fd;
-      text-align: left;
-    }
-    .markdown-body td {
-      padding: 0.65rem;
-      border: 1px solid #e2e8f0;
-    }
-    .markdown-body tr:nth-child(even) { background-color: #f8fafc; }
-    .markdown-body tr:hover { background-color: #f1f5f9; }
-    .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-      font-weight: 700;
-      margin-top: 1.5rem;
-      margin-bottom: 0.5rem;
-      color: #0f172a;
-    }
-    .markdown-body h1 { font-size: 1.35rem; }
-    .markdown-body h2 { font-size: 1.15rem; color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.25rem; }
-    .markdown-body h3 { font-size: 1rem; color: #1e293b; }
-    .markdown-body p { margin-bottom: 0.75rem; line-height: 1.6; }
-    .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; }
-    .markdown-body li { margin-bottom: 0.35rem; }
+    .markdown-body table { width: 100%; border-collapse: collapse; margin: 1.25rem 0; font-size: .875rem; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
 
-    .typing-dot {
-      width: 6px;
-      height: 6px;
-      background-color: #64748b;
-      border-radius: 50%;
-      animation: pulse 1.4s infinite ease-in-out both;
-    }
-    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-    @keyframes pulse {
-      0%, 80%, 100% { transform: scale(0); }
-      40% { transform: scale(1); }
-    }
+    .markdown-body th { background-color: #1e3a8a; color: #fff; padding: .75rem; font-weight: 600; border: 1px solid #93c5fd; text-align: left; }
+
+    .markdown-body td { padding: .65rem; border: 1px solid #e2e8f0; }
+
+    .markdown-body tr:nth-child(even) { background-color: #f8fafc; }
+
+    .markdown-body tr:hover { background-color: #f1f5f9; }
+
+    .markdown-body h1,.markdown-body h2,.markdown-body h3 { font-weight: 700; margin-top: 1.5rem; margin-bottom: .5rem; color: #0f172a; }
+
+    .markdown-body h1 { font-size: 1.35rem; }
+
+    .markdown-body h2 { font-size: 1.15rem; color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: .25rem; }
+
+    .markdown-body h3 { font-size: 1rem; color: #1e293b; }
+
+    .markdown-body p { margin-bottom: .75rem; line-height: 1.6; }
+
+    .markdown-body ul,.markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; }
+
+    .markdown-body li { margin-bottom: .35rem; }
+
+    .typing-dot { width: 6px; height: 6px; background-color: #64748b; border-radius: 50%; animation: pulse 1.4s infinite ease-in-out both; }
+
+    .typing-dot:nth-child(1) { animation-delay: -.32s; }
+
+    .typing-dot:nth-child(2) { animation-delay: -.16s; }
+
+    @keyframes pulse { 0%,80%,100% { transform: scale(0); } 40% { transform: scale(1); } }
+
   </style>
+
 </head>
+
 <body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col">
 
-  <!-- Header -->
   <header class="bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 text-white shadow-lg sticky top-0 z-30">
+
     <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3">
+
       <div class="flex items-center space-x-3">
-        <div class="bg-blue-600/30 p-2.5 rounded-xl border border-blue-400/30 flex items-center justify-center">
-          <i class="fa-solid fa-hospital-user text-2xl text-blue-300"></i>
-        </div>
+
+        <div class="bg-blue-600/30 p-2.5 rounded-xl border border-blue-400/30 flex items-center justify-center"><i class="fa-solid fa-hospital-user text-2xl text-blue-300"></i></div>
+
         <div>
-          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-            SWERHB RMNCH Hub
-            <span class="text-[10px] bg-blue-500/30 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full font-normal">v2.4 AI</span>
-          </h1>
-          <p class="text-xs text-blue-200/90">Automated Essential Health Monitoring & Audit System</p>
+
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">SWERHB RMNCH Hub <span class="text-[10px] bg-blue-500/30 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full font-normal">v2.4 AI</span></h1>
+
+          <p class="text-xs text-blue-200/90">Automated Essential Health Monitoring &amp; Audit System</p>
+
         </div>
+
       </div>
-      <div class="flex items-center space-x-2 text-xs bg-blue-950/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-blue-700/50 shadow-inner">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="text-blue-100 font-medium">Google Sheets Connected</span>
-      </div>
+
+      <div class="flex items-center space-x-2 text-xs bg-blue-950/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-blue-700/50 shadow-inner"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span><span class="text-blue-100 font-medium">Google Sheets Connected</span></div>
+
     </div>
+
   </header>
 
-  <!-- Main Workspace -->
   <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
 
-    <!-- Sidebar Controls -->
     <aside class="lg:col-span-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col gap-5 h-fit">
+
       <div>
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-sliders text-blue-600"></i> Report Controls
-        </h2>
+
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><i class="fa-solid fa-sliders text-blue-600"></i> Report Controls</h2>
 
         <label class="block text-xs font-semibold text-slate-700 mb-1.5">Target Zone</label>
-        <select id="zoneSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-3.5 font-medium transition-all">
-          <option value="Grand Total">Grand Total (All Zones)</option>
-        </select>
+
+        <select id="zoneSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-3.5 font-medium transition-all"><option value="Grand Total">Grand Total (All Zones)</option></select>
 
         <label class="block text-xs font-semibold text-slate-700 mb-1.5">Reporting Week</label>
-        <select id="weekSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-4 font-medium transition-all">
-          <option value="All Weeks">All Weeks</option>
-        </select>
 
-        <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.99]">
-          <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Analysis
-        </button>
+        <select id="weekSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none mb-4 font-medium transition-all"><option value="All Weeks">All Weeks</option></select>
+
+        <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.99]"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Analysis</button>
+
       </div>
 
       <hr class="border-slate-100" />
 
       <div>
+
         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Export Tools</h3>
-        <button id="exportDocxBtn" class="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-          <i class="fa-solid fa-file-word text-blue-400"></i> Export to Word (.docx)
-        </button>
+
+        <button id="exportDocxBtn" class="w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"><i class="fa-solid fa-file-word text-blue-400"></i> Export to Word (.docx)</button>
+
       </div>
+
     </aside>
 
-    <!-- Main Output & Looker Dashboard -->
     <section class="lg:col-span-3 flex flex-col gap-4">
 
-      <!-- Looker Studio Dashboard Embed -->
       <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
-            <i class="fa-solid fa-chart-pie text-blue-600"></i> Looker Studio Visual Analytics
-          </h3>
-          <span class="text-[11px] text-slate-400 font-medium">Live Data Stream</span>
-        </div>
-        <div class="w-full h-[380px] rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-          <iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" 
-                  class="w-full h-full border-0" 
-                  allowfullscreen>
-          </iframe>
-        </div>
+
+        <div class="flex items-center justify-between mb-3"><h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-600"></i> Looker Studio Visual Analytics</h3><span class="text-[11px] text-slate-400 font-medium">Live Data Stream</span></div>
+
+        <div class="w-full h-[380px] rounded-xl overflow-hidden border border-slate-200 bg-slate-50"><iframe src="https://datastudio.google.com/embed/reporting/b2b4381a-5a44-47f1-a407-49fa6b987bda/page/p_2g7d85cb8d" class="w-full h-full border-0" allowfullscreen></iframe></div>
+
       </div>
 
-      <!-- Output Window -->
       <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 flex-1 flex flex-col min-h-[550px] overflow-hidden">
-        <div class="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-slate-50/60">
-          <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
-            <i class="fa-solid fa-brain text-blue-600"></i> Analytics & Conversational Feedback Output
-          </h2>
-          <span id="statusBadge" class="text-xs font-semibold bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200">System Ready</span>
-        </div>
+
+        <div class="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-slate-50/60"><h2 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i class="fa-solid fa-brain text-blue-600"></i> Analytics &amp; Conversational Feedback Output</h2><span id="statusBadge" class="text-xs font-semibold bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200">System Ready</span></div>
 
         <div id="reportOutput" class="p-6 overflow-y-auto flex-1 custom-scroll markdown-body text-slate-700 leading-relaxed flex flex-col gap-4">
-          <div id="welcomePlaceholder" class="h-full my-auto flex flex-col items-center justify-center text-slate-400 gap-3 py-20">
-            <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1 border border-slate-200/60">
-              <i class="fa-solid fa-comments text-2xl text-slate-400"></i>
-            </div>
-            <p class="text-sm text-center max-w-sm text-slate-500">
-              Select your target Zone and Week above, then click <strong>"Generate AI Analysis"</strong> to produce your audit report.
-            </p>
-          </div>
+
+          <div id="welcomePlaceholder" class="h-full my-auto flex flex-col items-center justify-center text-slate-400 gap-3 py-20"><div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1 border border-slate-200/60"><i class="fa-solid fa-comments text-2xl text-slate-400"></i></div><p class="text-sm text-center max-w-sm text-slate-500">Select your target Zone and Week above, then click <strong>"Generate AI Analysis"</strong> to produce your audit report.</p></div>
+
         </div>
+
       </div>
 
-      <!-- Chat Input Bar -->
-      <div class="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200/80 flex gap-2 items-center">
-        <input type="text" id="customPrompt" placeholder="Ask follow-up questions, refine indicators, or type 'download word'..." class="flex-1 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none transition-all" />
-        <button id="sendPromptBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-3 rounded-xl transition-all flex items-center gap-2 shadow-sm whitespace-nowrap active:scale-[0.98]">
-          <i class="fa-solid fa-paper-plane"></i> Send
-        </button>
-      </div>
+      <div class="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200/80 flex gap-2 items-center"><input type="text" id="customPrompt" placeholder="Ask follow-up questions, refine indicators, or type 'download word'..." class="flex-1 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-600 focus:bg-white focus:outline-none transition-all"/><button id="sendPromptBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-3 rounded-xl transition-all flex items-center gap-2 shadow-sm whitespace-nowrap active:scale-[0.98]"><i class="fa-solid fa-paper-plane"></i> Send</button></div>
 
     </section>
 
   </main>
 
-  <!-- JavaScript -->
   <script>
+
     const tg = window.Telegram?.WebApp;
+
     if (tg) { tg.ready(); tg.expand(); }
 
-    let currentRawMarkdown = "";
+    let currentRawMarkdown = '';
 
     async function loadFilters() {
+
       try {
+
         const response = await fetch('/api/filters');
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         const data = await response.json();
 
         const zoneSelect = document.getElementById('zoneSelect');
+
         const weekSelect = document.getElementById('weekSelect');
 
-        if (data.zones && data.zones.length > 0) {
-          data.zones.forEach(zone => {
-            const option = document.createElement('option');
-            option.value = zone;
-            option.textContent = zone;
-            zoneSelect.appendChild(option);
-          });
-        }
+        if (data.zones?.length) data.zones.forEach(zone => {
 
-        if (data.weeks && data.weeks.length > 0) {
-          data.weeks.forEach(week => {
-            const option = document.createElement('option');
-            option.value = week;
-            option.textContent = week;
-            weekSelect.appendChild(option);
-          });
-        }
-      } catch (err) {
-        console.error("Failed to load spreadsheet filters:", err);
-      }
+          const option = document.createElement('option'); option.value = zone; option.textContent = zone; zoneSelect.appendChild(option);
+
+        });
+
+        if (data.weeks?.length) data.weeks.forEach(week => {
+
+          const option = document.createElement('option'); option.value = week; option.textContent = week; weekSelect.appendChild(option);
+
+        });
+
+      } catch (err) { console.error('Failed to load spreadsheet filters:', err); }
+
     }
 
     function appendUserMessage(text) {
+
       const output = document.getElementById('reportOutput');
+
       const welcome = document.getElementById('welcomePlaceholder');
+
       if (welcome) welcome.remove();
 
       const userDiv = document.createElement('div');
-      userDiv.className = "self-end bg-blue-600 text-white font-medium text-sm px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] shadow-sm my-1";
+
+      userDiv.className = 'self-end bg-blue-600 text-white font-medium text-sm px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[85%] shadow-sm my-1';
+
       userDiv.textContent = text;
+
       output.appendChild(userDiv);
+
       output.scrollTop = output.scrollHeight;
+
     }
 
     function showTypingIndicator() {
+
       const output = document.getElementById('reportOutput');
+
       const welcome = document.getElementById('welcomePlaceholder');
+
       if (welcome) welcome.remove();
 
       const indicator = document.createElement('div');
-      indicator.id = "typingIndicator";
-      indicator.className = "self-start bg-slate-100 border border-slate-200/80 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5 my-1";
+
+      indicator.id = 'typingIndicator';
+
+      indicator.className = 'self-start bg-slate-100 border border-slate-200/80 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5 my-1';
+
       indicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+
       output.appendChild(indicator);
+
       output.scrollTop = output.scrollHeight;
+
       return indicator;
+
     }
 
     function removeTypingIndicator() {
+
       const indicator = document.getElementById('typingIndicator');
+
       if (indicator) indicator.remove();
+
     }
 
     async function fetchReport(userPrompt = null) {
+
       const zone = document.getElementById('zoneSelect').value;
+
       const week = document.getElementById('weekSelect').value;
+
       const reportOutput = document.getElementById('reportOutput');
+
       const statusBadge = document.getElementById('statusBadge');
 
-      if (userPrompt && (userPrompt.toLowerCase().includes('download') || userPrompt.toLowerCase().includes('word') || userPrompt.toLowerCase().includes('docx'))) {
+      if (userPrompt && /\b(download|word|docx)\b/i.test(userPrompt)) {
+
         appendUserMessage(userPrompt);
+
         await downloadWordDoc();
+
         return;
+
       }
 
-      const queryText = userPrompt || "Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.";
-      
-      if (userPrompt) {
-        appendUserMessage(userPrompt);
-      }
+      const queryText = userPrompt || 'Generate full report with all indicator categories and dedicated HSTP-II benchmarking section.';
 
-      statusBadge.textContent = "Analyzing Data...";
-      statusBadge.className = "text-xs font-semibold bg-amber-100 text-amber-700 px-3 py-1 rounded-full border border-amber-200 animate-pulse";
+      if (userPrompt) appendUserMessage(userPrompt);
+
+      statusBadge.textContent = 'Analyzing Data...';
+
+      statusBadge.className = 'text-xs font-semibold bg-amber-100 text-amber-700 px-3 py-1 rounded-full border border-amber-200 animate-pulse';
 
       showTypingIndicator();
 
       try {
+
         const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+
           body: JSON.stringify({
-            message: queryText,
-            selectedZone: zone,
-            selectedWeek: week,
+
+            message: queryText, selectedZone: zone, selectedWeek: week,
+
             user: tg?.initDataUnsafe?.user || {}
+
           })
+
         });
 
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
         const data = await response.json();
+
         removeTypingIndicator();
 
-        currentRawMarkdown = data.reply || "No feedback generated.";
+        currentRawMarkdown = data.reply || 'No feedback generated.';
 
         const botDiv = document.createElement('div');
-        botDiv.className = "self-start w-full bg-slate-50 border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm my-1";
+
+        botDiv.className = 'self-start w-full bg-slate-50 border border-slate-200/80 p-5 rounded-2xl rounded-tl-sm my-1';
+
         botDiv.innerHTML = marked.parse(currentRawMarkdown);
+
         reportOutput.appendChild(botDiv);
+
         reportOutput.scrollTop = reportOutput.scrollHeight;
 
-        statusBadge.textContent = "Analysis Complete";
-        statusBadge.className = "text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200";
+        statusBadge.textContent = 'Analysis Complete';
+
+        statusBadge.className = 'text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200';
 
       } catch (err) {
+
         removeTypingIndicator();
+
         const errDiv = document.createElement('div');
-        errDiv.className = "self-start text-red-600 bg-red-50 border border-red-200 p-4 rounded-xl text-sm font-medium my-1";
-        errDiv.textContent = "Error loading report: " + err.message;
+
+        errDiv.className = 'self-start text-red-600 bg-red-50 border border-red-200 p-4 rounded-xl text-sm font-medium my-1';
+
+        errDiv.textContent = 'Error loading report: ' + err.message;
+
         reportOutput.appendChild(errDiv);
 
-        statusBadge.textContent = "Error";
-        statusBadge.className = "text-xs font-semibold bg-red-100 text-red-700 px-3 py-1 rounded-full border border-red-200";
+        statusBadge.textContent = 'Error';
+
+        statusBadge.className = 'text-xs font-semibold bg-red-100 text-red-700 px-3 py-1 rounded-full border border-red-200';
+
       }
+
     }
 
-    // Telegram & Android Compatible Word Document Downloader
+    // Generate DOCX on Express and download it using Telegram's native file download API.
+
     async function downloadWordDoc() {
+
       const zone = document.getElementById('zoneSelect').value;
+
       const week = document.getElementById('weekSelect').value;
+
       const title = `Weekly RMNCH Feedback - ${zone} (${week})`;
+
       const reportOutput = document.getElementById('reportOutput');
 
       const textToExport = currentRawMarkdown || reportOutput.innerText;
 
-      if (!textToExport || textToExport.trim().length === 0 || textToExport.includes("Select your target Zone")) {
+      if (!textToExport || !textToExport.trim() || textToExport.includes('Select your target Zone')) {
+
         alert("Please generate an analysis report first by clicking 'Generate AI Analysis'.");
+
         return;
+
       }
 
-      const typing = showTypingIndicator();
+      showTypingIndicator();
 
       try {
+
         const response = await fetch('/api/export-docx', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportText: textToExport, title: title })
+
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+
+          body: JSON.stringify({ reportText: textToExport, title })
+
         });
 
-        if (!response.ok) throw new Error('Failed to create Word document');
+        if (!response.ok) {
 
-        
-        
-        
-       const blob = await response.blob();
-removeTypingIndicator();
+          const errorData = await response.json().catch(() => ({}));
 
-const filename = `RMNCH_Report_${zone}_${week}.docx`
-  .replace(/[^a-zA-Z0-9_.-]/g, '_');
+          throw new Error(errorData.error || 'Failed to generate Word document');
 
-// Upload the generated DOCX to your backend
-const formData = new FormData();
-formData.append('file', blob, filename);
+        }
 
-const uploadResponse = await fetch('/api/save-docx', {
-  method: 'POST',
-  body: formData
-});
+        const fileData = await response.json();
 
-if (!uploadResponse.ok) {
-  throw new Error('Failed to prepare Word document for download');
-}
+        if (!fileData.success || !fileData.url || !fileData.filename) {
 
-const fileData = await uploadResponse.json(); 
-        
-        
-        const blob = await response.blob();
+          throw new Error('The server did not return a valid Word download link.');
+
+        }
+
         removeTypingIndicator();
 
-
-
-
-        // Render interactive download card inside chat stream
         const card = document.createElement('div');
-        card.className = "self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg";
-        card.innerHTML = `
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm">
-              <i class="fa-solid fa-file-word"></i>
-            </div>
-            <div>
-              <p class="font-bold text-sm text-emerald-950">Word Document Ready!</p>
-              <p class="text-xs text-emerald-700">Feedback Report for ${zone} (${week})</p>
-            </div>
-          </div>
-          <button id="realDownloadBtn" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all text-center whitespace-nowrap active:scale-[0.98]">
-            <i class="fa-solid fa-download mr-1"></i> Tap to Save .docx
-          </button>
-        `;
+
+        card.className = 'self-start my-2 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-lg';
+
+        const info = document.createElement('div');
+
+        info.className = 'flex items-center gap-3';
+
+        const iconWrap = document.createElement('div');
+
+        iconWrap.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm';
+
+        iconWrap.innerHTML = '<i class="fa-solid fa-file-word"></i>';
+
+        const infoText = document.createElement('div');
+
+        const heading = document.createElement('p');
+
+        heading.className = 'font-bold text-sm text-emerald-950';
+
+        heading.textContent = 'Word Document Ready!';
+
+        const filenameText = document.createElement('p');
+
+        filenameText.className = 'text-xs text-emerald-700';
+
+        filenameText.textContent = fileData.filename;
+
+        infoText.append(heading, filenameText);
+
+        info.append(iconWrap, infoText);
+
+        const downloadButton = document.createElement('button');
+
+        downloadButton.type = 'button';
+
+        downloadButton.className = 'w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all';
+
+        downloadButton.innerHTML = '<i class="fa-solid fa-download mr-1"></i> Download Word';
+
+        downloadButton.addEventListener('click', () => {
+
+          if (tg && typeof tg.downloadFile === 'function') {
+
+            tg.downloadFile({ url: fileData.url, file_name: fileData.filename });
+
+          } else {
+
+            // Browser fallback: open the real HTTPS file URL.
+
+            window.open(fileData.url, '_blank', 'noopener');
+
+          }
+
+        });
+
+        card.append(info, downloadButton);
+
         reportOutput.appendChild(card);
+
         reportOutput.scrollTop = reportOutput.scrollHeight;
 
-        // Bind direct user-click action optimized for Telegram Android WebViews
-        document.getElementById('realDownloadBtn').addEventListener('click', () => {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          a.target = '_blank';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-        });
-
       } catch (err) {
+
         removeTypingIndicator();
-        alert("Failed to export Word document: " + err.message);
+
+        console.error('Word export error:', err);
+
+        alert('Failed to export Word document: ' + err.message);
+
       }
+
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+
       loadFilters();
 
-      
+      document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
 
-document.getElementById('realDownloadBtn').addEventListener('click', () => {
-  if (window.Telegram?.WebApp?.downloadFile) {
-    window.Telegram.WebApp.downloadFile({
-      url: fileData.url,
-      file_name: filename
-    });
-  } else {
-    window.open(fileData.url, '_blank');
-  }
-});
-
-
-      
+      document.getElementById('exportDocxBtn').addEventListener('click', downloadWordDoc);
 
       const promptInput = document.getElementById('customPrompt');
+
       const sendBtn = document.getElementById('sendPromptBtn');
 
       const handleSend = () => {
+
         const text = promptInput.value.trim();
-        if (text) {
-          fetchReport(text);
-          promptInput.value = '';
-        }
+
+        if (text) { fetchReport(text); promptInput.value = ''; }
+
       };
 
       sendBtn.addEventListener('click', handleSend);
-      promptInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleSend();
+
+      promptInput.addEventListener('keydown', event => {
+
+        if (event.key === 'Enter') handleSend();
+
       });
+
     });
+
   </script>
+
 </body>
+
 </html>
