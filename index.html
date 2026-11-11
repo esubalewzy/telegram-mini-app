@@ -342,11 +342,36 @@
 
         if (!response.ok) throw new Error('Failed to create Word document');
 
+        
+        
+        
+       const blob = await response.blob();
+removeTypingIndicator();
+
+const filename = `RMNCH_Report_${zone}_${week}.docx`
+  .replace(/[^a-zA-Z0-9_.-]/g, '_');
+
+// Upload the generated DOCX to your backend
+const formData = new FormData();
+formData.append('file', blob, filename);
+
+const uploadResponse = await fetch('/api/save-docx', {
+  method: 'POST',
+  body: formData
+});
+
+if (!uploadResponse.ok) {
+  throw new Error('Failed to prepare Word document for download');
+}
+
+const fileData = await uploadResponse.json(); 
+        
+        
         const blob = await response.blob();
         removeTypingIndicator();
 
-        const url = window.URL.createObjectURL(blob);
-        const filename = `RMNCH_Report_${zone}_${week}.docx`.replace(/\s+/g, '_');
+
+
 
         // Render interactive download card inside chat stream
         const card = document.createElement('div');
@@ -388,8 +413,21 @@
     document.addEventListener('DOMContentLoaded', () => {
       loadFilters();
 
-      document.getElementById('generateBtn').addEventListener('click', () => fetchReport());
-      document.getElementById('exportDocxBtn').addEventListener('click', () => downloadWordDoc());
+      
+
+document.getElementById('realDownloadBtn').addEventListener('click', () => {
+  if (window.Telegram?.WebApp?.downloadFile) {
+    window.Telegram.WebApp.downloadFile({
+      url: fileData.url,
+      file_name: filename
+    });
+  } else {
+    window.open(fileData.url, '_blank');
+  }
+});
+
+
+      
 
       const promptInput = document.getElementById('customPrompt');
       const sendBtn = document.getElementById('sendPromptBtn');
