@@ -20,8 +20,7 @@ const PORT = process.env.PORT || 3000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 
-// Temporary in-memory storage for generated Word documents.
-// Links expire after 15 minutes. For multi-instance hosting, use shared storage.
+// Temporary in-memory storage for generated Word documents (15-min expiry)
 const temporaryDocuments = new Map();
 const DOWNLOAD_EXPIRY = 15 * 60 * 1000;
 
@@ -35,6 +34,8 @@ cleanupTimer.unref?.();
 
 const SHEET_ID = '1d8_5Q2W3aGV68W_DdjrPrFEJnuRSDprrb1b3kngbTpo';
 const FINAL_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Final`;
+
+const REPORT_FOOTER = `\n\n---\n*This report is prepared by **SWERHB MCH Team**. Note: This is a preliminary report; for more information and interactive analytics, please visit the **RMNCH Dashboard**.*`;
 
 function parseCSVLine(text) {
   const result = [];
@@ -92,6 +93,248 @@ function getCurrentReportingWeek(rawData) {
     || availableWeeks[availableWeeks.length - 1];
 }
 
+/**
+ * Shared analytical engine: computes coverage, Top/Bottom 3 woredas per category,
+ * historical outliers, missing data, repeated numbers across weeks, and indicator consistency.
+ */
+function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
+  const isGrandTotal = !selectedZone || selectedZone === 'Grand Total';
+
+  const zoneAllData = isGrandTotal
+    ? rawData
+    : rawData.filter(r => r.Zone && r.Zone.trim().toLowerCase() === selectedZone.trim().toLowerCase());
+
+  let filteredData = zoneAllData;
+  if (selectedWeek && selectedWeek !== 'All Weeks') {
+    filteredData = filteredData.filter(r => r.Week && r.Week.toLowerCase().includes(selectedWeek.toLowerCase()));
+  }
+
+  const totalExpectedWoredas = filteredData.length;
+  const reportingWoredas = filteredData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
+  const nonReportingRows = filteredData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported');
+  const nonReportingWoredas = nonReportingRows.map(r => isGrandTotal ? `${r.Woreda} (${r.Zone})` : r.Woreda).filter(Boolean);
+  const reportingRate = totalExpectedWoredas > 0
+    ? `${((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1)}%` : '0%';
+
+  // Multi-week trend summary
+  const weeklyTrends = {};
+  zoneAllData.forEach(r => {
+    const wk = r.Week || 'Unknown Week';
+    if (!weeklyTrends[wk]) weeklyTrends[wk] = { totalExpected: 0, reportedCount: 0 };
+    weeklyTrends[wk].totalExpected++;
+    if (r.Report && r.Report.toLowerCase() === 'reported') weeklyTrends[wk].reportedCount++;
+  });
+  const weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
+    const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
+    return `${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
+  }).join(' | ');
+
+  const headers = Object.keys(rawData[0] || {});
+  const indicatorPairs = [];
+
+  headers.forEach(header => {
+    if (header.includes('Eligible')) {
+      const baseName = header.replace('Eligible', '').trim();
+      const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
+      if (performedKey) {
+        let catKey = null;
+        if (baseName.startsWith('1.')) catKey = 'cat1_srh';
+        else if (baseName.startsWith('2.')) catKey = 'cat2_maternal';
+        else if (baseName.startsWith('3.')) catKey = 'cat3_epi';
+        else if (baseName.startsWith('4.')) categorizedIndicatorsKey = 'cat4_child';
+        else if (baseName.startsWith('5.')) catKey = 'cat5_nutrition';
+
+        if (baseName.startsWith('4.')) catKey = 'cat4_child';
+        if (catKey) {
+          indicatorPairs.push({ catKey, baseName, performedKey, eligibleKey: header });
+        }
+      }
+    }
+  });
+
+  // Aggregate category indicators
+  const categorizedIndicators = {
+    cat1_srh: [], cat2_maternal: [], cat3_epi: [], cat4_child: [], cat5_nutrition: []
+  };
+
+  indicatorPairs.forEach(({ catKey, performedKey, eligibleKey }) => {
+    let totalPerformed = 0;
+    let totalEligible = 0;
+    filteredData.forEach(row => {
+      totalPerformed += parseFloat(row[performedKey]) || 0;
+      totalEligible += parseFloat(row[eligibleKey]) || 0;
+    });
+    const coverageNum = totalEligible > 0 ? Number(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
+    categorizedIndicators[catKey].push({
+      name: performedKey,
+      performed: totalPerformed,
+      eligible: totalEligible,
+      coverage: `${coverageNum}%`
+    });
+  });
+
+  // Best 3 & Poor 3 Performing Woredas per Category (among reporting woredas)
+  const categoryRankings = {};
+  const categoryLabels = {
+    cat1_srh: 'Category 1: SRH Services',
+    cat2_maternal: 'Category 2: Maternal Services',
+    cat3_epi: 'Category 3: EPI Services',
+    cat4_child: 'Category 4: Child Health Services',
+    cat5_nutrition: 'Category 5: Nutrition'
+  };
+
+  Object.keys(categoryLabels).forEach(catKey => {
+    const pairs = indicatorPairs.filter(p => p.catKey === catKey);
+    const woredaScores = [];
+
+    reportingWoredas.forEach(row => {
+      let sumPct = 0;
+      let validCount = 0;
+      pairs.forEach(({ performedKey, eligibleKey }) => {
+        const elig = parseFloat(row[eligibleKey]);
+        const perf = parseFloat(row[performedKey]);
+        if (!isNaN(elig) && elig > 0 && !isNaN(perf)) {
+          sumPct += (perf / elig) * 100;
+          validCount++;
+        }
+      });
+      if (validCount > 0) {
+        const label = isGrandTotal ? `${row.Woreda} (${row.Zone})` : row.Woreda;
+        woredaScores.push({
+          woreda: label,
+          avgCoverage: Number((sumPct / validCount).toFixed(1))
+        });
+      }
+    });
+
+    woredaScores.sort((a, b) => b.avgCoverage - a.avgCoverage);
+    categoryRankings[categoryLabels[catKey]] = {
+      best3: woredaScores.slice(0, 3).map(w => `${w.woreda} (${w.avgCoverage}%)`),
+      poor3: woredaScores.length > 3
+        ? woredaScores.slice(-3).reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`)
+        : woredaScores.slice().reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`)
+    };
+  });
+
+  // Data Quality & Consistency Audits
+  const qualityAudit = {
+    outliers: [],
+    missingData: [],
+    repeatedValues: [],
+    indicatorInconsistencies: []
+  };
+
+  // Identify key indicator headers for logical consistency checks
+  const findCol = (patterns) => headers.find(h =>
+    !h.includes('Eligible') && !h.includes('Target') &&
+    patterns.some(p => h.toLowerCase().includes(p))
+  );
+
+  const penta1Col = findCol(['penta 1', 'penta-1', 'pentavalent 1', 'pentavalent-1', 'penta1']);
+  const penta3Col = findCol(['penta 3', 'penta-3', 'pentavalent 3', 'pentavalent-3', 'penta3']);
+  const anc1Col = findCol(['anc 1', 'anc-1', 'anc1']);
+  const anc4Col = findCol(['anc 4', 'anc-4', 'anc4']);
+  const anc8Col = findCol(['anc 8', 'anc-8', 'anc8']);
+
+  // Group historical records by Woreda for trend/outlier/repetition checks
+  const historyByWoreda = {};
+  zoneAllData.forEach(r => {
+    const key = `${r.Zone}__${r.Woreda}`;
+    if (!historyByWoreda[key]) historyByWoreda[key] = [];
+    historyByWoreda[key].push(r);
+  });
+
+  reportingWoredas.forEach(row => {
+    const woredaLabel = isGrandTotal ? `${row.Woreda} (${row.Zone})` : row.Woreda;
+    const key = `${row.Zone}__${row.Woreda}`;
+    const woredaHistory = historyByWoreda[key] || [];
+
+    // 1. Missing Data Check (blank cells in reported rows)
+    const missingCols = [];
+    indicatorPairs.forEach(({ performedKey }) => {
+      const val = row[performedKey];
+      if (val === undefined || val === null || val.toString().trim() === '') {
+        missingCols.push(performedKey);
+      }
+    });
+    if (missingCols.length > 0) {
+      qualityAudit.missingData.push(`${woredaLabel}: Missing values for ${missingCols.slice(0, 5).join(', ')}${missingCols.length > 5 ? ` (+${missingCols.length - 5} more)` : ''}`);
+    }
+
+    // 2. Logical Consistency Checks (Penta 1 vs Penta 3; ANC 1 vs ANC 4 vs ANC 8)
+    const p1 = penta1Col ? parseFloat(row[penta1Col]) : NaN;
+    const p3 = penta3Col ? parseFloat(row[penta3Col]) : NaN;
+    if (!isNaN(p1) && !isNaN(p3) && p3 > p1) {
+      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: Penta 3 (${p3}) > Penta 1 (${p1})`);
+    }
+
+    const a1 = anc1Col ? parseFloat(row[anc1Col]) : NaN;
+    const a4 = anc4Col ? parseFloat(row[anc4Col]) : NaN;
+    const a8 = anc8Col ? parseFloat(row[anc8Col]) : NaN;
+    if (!isNaN(a1) && !isNaN(a4) && a4 > a1) {
+      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 4 (${a4}) > ANC 1 (${a1})`);
+    }
+    if (!isNaN(a4) && !isNaN(a8) && a8 > a4) {
+      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 4 (${a4})`);
+    } else if (!isNaN(a1) && !isNaN(a8) && a8 > a1) {
+      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 1 (${a1})`);
+    }
+
+    // 3. Historical Outlier & Repeated Value Checks
+    const priorWeeks = woredaHistory.filter(h =>
+      h.Report && h.Report.toLowerCase() === 'reported' && h.Week !== row.Week
+    );
+
+    if (priorWeeks.length >= 2) {
+      indicatorPairs.forEach(({ performedKey }) => {
+        const currVal = parseFloat(row[performedKey]);
+        if (isNaN(currVal)) return;
+
+        const prevVals = priorWeeks
+          .map(p => parseFloat(p[performedKey]))
+          .filter(v => !isNaN(v));
+
+        if (prevVals.length >= 2) {
+          // Repeated identical non-zero values across weeks
+          const recentTwo = prevVals.slice(-2);
+          if (currVal > 0 && recentTwo.every(v => v === currVal)) {
+            qualityAudit.repeatedValues.push(`${woredaLabel}: Reported exact same figure (${currVal}) for [${performedKey}] across 3+ weeks`);
+          }
+
+          // Statistical Outlier (>50% deviation from historical mean, minimum threshold >= 10)
+          const mean = prevVals.reduce((acc, v) => acc + v, 0) / prevVals.length;
+          if (mean >= 10 && Math.abs(currVal - mean) / mean > 0.5) {
+            const direction = currVal > mean ? 'spike' : 'drop';
+            qualityAudit.outliers.push(`${woredaLabel}: Unusual ${direction} in [${performedKey}] (Current: ${currVal} vs Weekly Avg: ${mean.toFixed(1)})`);
+          }
+        }
+      });
+    }
+  });
+
+  // Mortality Alerts (Maternal/Neonatal Only)
+  const mortalityAlerts = [];
+  filteredData.forEach(row => {
+    const woredaName = isGrandTotal ? `${row.Woreda} (${row.Zone})` : (row.Woreda || 'Unknown Woreda');
+    headers.forEach(h => {
+      const lowerH = h.toLowerCase();
+      if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
+        mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
+      }
+    });
+  });
+
+  return {
+    reportingRate,
+    nonReportingWoredas,
+    weeklyTrendSummary,
+    categorizedIndicators,
+    categoryRankings,
+    qualityAudit,
+    mortalityAlerts
+  };
+}
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/health', (req, res) => res.status(200).send('OK - Server is awake'));
 
@@ -107,122 +350,83 @@ app.get('/api/filters', async (req, res) => {
   }
 });
 
-async function generateAiReport(zoneName, filteredData, reportingRate, nonReportingWoredas,
-  weeklyTrendSummary, categorizedIndicators, hstp2OfficialTargets, qualityIssues,
-  hepBDMissedWoredas, mortalityAlerts, currentWeek) {
-  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Generate a complete, exhaustive analytical report without truncating any categories.
+async function generateAiReport(zoneName, analytics, currentWeek, isEmailSummary = false) {
+  const {
+    reportingRate,
+    nonReportingWoredas,
+    weeklyTrendSummary,
+    categorizedIndicators,
+    categoryRankings,
+    qualityAudit,
+    mortalityAlerts
+  } = analytics;
+
+  const formatInstruction = isEmailSummary
+    ? `CRITICAL LENGTH & FORMAT RULE:
+Generate a SHORT, EXECUTIVE SUMMARY EMAIL that fits on LESS THAN 1 PAGE (approx. 250–350 words).
+Do NOT output full multi-row indicator tables. Instead, present crisp, scannable bullet points covering:
+1. **Reporting Overview & Non-Reporting Woredas**
+2. **Key Service Coverage Highlights** (brief 1-line takeaway per category)
+3. **Top 3 & Bottom 3 Woredas** (concise highlights across the 5 categories)
+4. **Data Quality & Consistency Alerts** (outliers, missing data, repeated numbers across weeks, and Penta 1/3 or ANC 1/4/8 inconsistencies)
+5. **Mortality Alerts** (if any)`
+    : `Required Exhaustive Report Structure (Do NOT include any HSTP-II comparison):
+1. **Reporting Rate Summary**
+2. **Multi-Week Reporting Trend Analysis**
+3. **Category 1: SRH Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
+4. **Category 2: Maternal Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
+5. **Category 3: EPI Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
+6. **Category 4: Child Health Service** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
+7. **Category 5: Nutrition** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
+8. **Data Quality & Consistency Audit** (Explicitly detail: Statistical Outliers vs previous weeks, Missing Data, Woredas reporting identical numbers across weeks, and Indicator Inconsistencies such as Penta 1 vs Penta 3 and ANC 1 vs ANC 4 vs ANC 8)
+9. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
+
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Do NOT compare data against HSTP-II targets.
 
 Greeting Header (Must start with exactly):
-"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName} Zone, Week ${currentWeek}"
+"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
+
+${formatInstruction}
 
 Data Context:
 - Reporting Rate: ${reportingRate}
 - Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
 - Multi-Week Reporting Trend: ${weeklyTrendSummary}
-- Complete Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Official Ethiopian HSTP-II Targets: ${JSON.stringify(hstp2OfficialTargets)}
-- Hepatitis BD Missed Audit: ${hepBDMissedWoredas.join(' | ') || 'None'}
-- Consistency & Data Quality Issues: ${qualityIssues.join(' | ') || 'None'}
+- Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
+- Best 3 & Poor 3 Performing Woredas per Category: ${JSON.stringify(categoryRankings)}
+- Data Quality & Consistency Audit Findings: ${JSON.stringify(qualityAudit)}
 - Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Generate full individualized report for ${zoneName}.` }
+      {
+        role: 'user',
+        content: isEmailSummary
+          ? `Generate a concise under-1-page Wednesday executive email summary for ${zoneName}.`
+          : `Generate the complete individualized report for ${zoneName}.`
+      }
     ],
     model: 'openai/gpt-oss-20b',
     temperature: 0.3,
-    max_completion_tokens: 3000
+    max_completion_tokens: isEmailSummary ? 1100 : 3500
   });
-  return chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
+
+  const body = chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
+  return `${body.trim()}${REPORT_FOOTER}`;
 }
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, selectedZone, selectedWeek } = req.body;
+    const { selectedZone, selectedWeek } = req.body;
     const rawData = await fetchFinalSheetData();
     if (!rawData.length) return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
 
-    let filteredData = rawData;
-    if (selectedZone && selectedZone !== 'Grand Total') {
-      filteredData = filteredData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase());
-    }
-    if (selectedWeek && selectedWeek !== 'All Weeks') {
-      filteredData = filteredData.filter(r => r.Week && r.Week.toLowerCase().includes(selectedWeek.toLowerCase()));
-    }
+    const zoneLabel = selectedZone || 'Grand Total';
+    const weekLabel = selectedWeek || 'Current Week';
+    const analytics = buildAnalyticsPayload(rawData, zoneLabel, weekLabel);
 
-    const totalExpectedWoredas = filteredData.length;
-    const reportingWoredas = filteredData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-    const nonReportingRows = filteredData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported');
-    const nonReportingWoredas = nonReportingRows.map(r => r.Woreda).filter(Boolean);
-    const reportingRate = totalExpectedWoredas > 0
-      ? `${((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1)}%` : '0%';
-
-    const weeklyTrends = {};
-    const zoneAllData = selectedZone && selectedZone !== 'Grand Total'
-      ? rawData.filter(r => r.Zone && r.Zone.toLowerCase() === selectedZone.toLowerCase()) : rawData;
-    zoneAllData.forEach(r => {
-      const wk = r.Week || 'Unknown Week';
-      if (!weeklyTrends[wk]) weeklyTrends[wk] = { totalExpected: 0, reportedCount: 0 };
-      weeklyTrends[wk].totalExpected++;
-      if (r.Report && r.Report.toLowerCase() === 'reported') weeklyTrends[wk].reportedCount++;
-    });
-    const weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
-      const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
-      return `${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected} woredas)`;
-    }).join(' | ');
-
-    const headers = Object.keys(rawData[0] || {});
-    const categorizedIndicators = {
-      cat1_srh: [], cat2_maternal: [], cat3_epi: [], cat4_child: [], cat5_nutrition: []
-    };
-    headers.forEach(header => {
-      if (header.includes('Eligible')) {
-        const baseName = header.replace('Eligible', '').trim();
-        const performedKey = headers.find(h => h.startsWith(baseName) && !h.includes('Eligible') && !h.includes('Target'));
-        if (performedKey) {
-          let totalPerformed = 0;
-          let totalEligible = 0;
-          filteredData.forEach(row => {
-            totalPerformed += parseFloat(row[performedKey]) || 0;
-            totalEligible += parseFloat(row[header]) || 0;
-          });
-          const coverageNum = totalEligible > 0 ? Number(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
-          const indicatorEntry = {
-            name: performedKey, performed: totalPerformed,
-            eligible: totalEligible, coverage: `${coverageNum}%`
-          };
-          if (baseName.startsWith('1.')) categorizedIndicators.cat1_srh.push(indicatorEntry);
-          else if (baseName.startsWith('2.')) categorizedIndicators.cat2_maternal.push(indicatorEntry);
-          else if (baseName.startsWith('3.')) categorizedIndicators.cat3_epi.push(indicatorEntry);
-          else if (baseName.startsWith('4.')) categorizedIndicators.cat4_child.push(indicatorEntry);
-          else if (baseName.startsWith('5.')) categorizedIndicators.cat5_nutrition.push(indicatorEntry);
-        }
-      }
-    });
-
-    const hstp2OfficialTargets = {
-      maternalAndReproductive: { CPR: '50%', 'ANC 4 Visits': '81%', 'Skilled Delivery': '76%', 'Early PNC': '76%' },
-      childHealthAndEpi: { 'Pentavalent-3': '85%', 'Full Vaccination': '75%', MCV2: '80%' }
-    };
-    const qualityIssues = [];
-    const hepBDMissedWoredas = [];
-    const mortalityAlerts = [];
-    filteredData.forEach(row => {
-      const woredaName = row.Woreda || 'Unknown Woreda';
-      headers.forEach(h => {
-        const lowerH = h.toLowerCase();
-        if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
-          mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
-        }
-      });
-    });
-
-    const responseText = await generateAiReport(
-      selectedZone || 'Grand Total', filteredData, reportingRate, nonReportingWoredas,
-      weeklyTrendSummary, categorizedIndicators, hstp2OfficialTargets,
-      qualityIssues, hepBDMissedWoredas, mortalityAlerts, selectedWeek || 'Current Week'
-    );
+    const responseText = await generateAiReport(zoneLabel, analytics, weekLabel, false);
     res.json({ reply: responseText });
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
@@ -289,9 +493,9 @@ app.post('/api/export-docx', async (req, res) => {
           docChildren.push(new Paragraph({ text: '', spacing: { after: 150 } }));
         }
       } else {
-        if (line) {
+        if (line && line !== '---') {
           docChildren.push(new Paragraph({
-            children: [new TextRun({ text: lines[i], size: 22 })],
+            children: [new TextRun({ text: lines[i].replace(/\*\*/g, '').replace(/\*/g, ''), size: 22 })],
             spacing: { after: 100 }
           }));
         }
@@ -310,7 +514,6 @@ app.post('/api/export-docx', async (req, res) => {
       expiresAt: Date.now() + DOWNLOAD_EXPIRY
     });
 
-    // Set APP_BASE_URL in hosting environment to your canonical public HTTPS origin.
     const baseUrl = (process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
     const url = `${baseUrl}/api/download-docx/${token}`;
     res.json({ success: true, url, filename });
@@ -320,7 +523,6 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
-// Telegram fetches this URL to retrieve the actual DOCX bytes.
 app.get('/api/download-docx/:token', (req, res) => {
   const token = req.params.token;
   const file = temporaryDocuments.get(token);
@@ -366,6 +568,7 @@ async function runRmnchEmailDispatch(forcedDay = null) {
     const currentWeek = getCurrentReportingWeek(rawData);
     const zones = [...new Set(rawData.map(r => r.Zone).filter(Boolean))];
     const dayOfWeek = forcedDay !== null ? forcedDay : new Date().getDay();
+
     const zonalEmails = {
       'kaffa zone': ['tadessebelay1221@gmail.com', 'esubalewzerihun37@gmail.com'],
       'dawro zone': ['ketesfu7@gmail.com', 'esubalewzerihun37@gmail.com'],
@@ -380,6 +583,7 @@ async function runRmnchEmailDispatch(forcedDay = null) {
       const cleanZoneKey = zone.toString().trim().toLowerCase();
       const recipientEmail = zonalEmails[cleanZoneKey];
       if (!recipientEmail) continue;
+
       const zoneData = rawData.filter(r =>
         r.Zone?.toString().trim().toLowerCase() === cleanZoneKey &&
         r.Week?.toString().trim().toLowerCase().includes(currentWeek.toLowerCase())
@@ -397,36 +601,29 @@ async function runRmnchEmailDispatch(forcedDay = null) {
         zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} (${currentWeek}).\n\n` +
           `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
           `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
-          'Note: Complete analytical breakdown and feedback will be dispatched on Wednesday.';
+          'Note: Summary analytical feedback will be dispatched on Wednesday.' +
+          `\n\n---\nThis report is prepared by SWERHB MCH Team. Note: This is a preliminary report; for more information, please visit the RMNCH Dashboard.`;
       } else {
-        zonalBody = await generateAiReport(
-          zone, zoneData, reportingRateStr,
-          zoneData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported').map(r => r.Woreda),
-          '', {}, {}, [], [], [], currentWeek
-        );
+        // WEDNESDAY: Short, informative <1-page executive summary
+        const analytics = buildAnalyticsPayload(rawData, zone, currentWeek);
+        zonalBody = await generateAiReport(zone, analytics, currentWeek, true);
       }
+
       await sendViaBrevo(
         recipientEmail,
-        `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Feedback & Analysis'}] ${zone} - ${currentWeek}`,
+        `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Weekly Summary Feedback'}] ${zone} - ${currentWeek}`,
         zonalBody
       );
     }
 
     if (dayOfWeek === 3) {
-      const regionalData = rawData.filter(r => r.Week?.toString().trim().toLowerCase().includes(currentWeek.toLowerCase()));
-      const regTotalExpected = regionalData.length;
-      const regReported = regionalData.filter(r => r.Report && r.Report.toLowerCase() === 'reported');
-      const regReportingRateStr = regTotalExpected > 0
-        ? `${((regReported.length / regTotalExpected) * 100).toFixed(1)}%` : '0%';
-      const regionalBody = await generateAiReport(
-        'Grand Total', regionalData, regReportingRateStr,
-        regionalData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported')
-          .map(r => `${r.Zone} (${r.Woreda})`),
-        '', {}, {}, [], [], [], currentWeek
-      );
+      // WEDNESDAY REGIONAL GRAND TOTAL: Short, informative <1-page executive summary
+      const regionalAnalytics = buildAnalyticsPayload(rawData, 'Grand Total', currentWeek);
+      const regionalBody = await generateAiReport('Grand Total', regionalAnalytics, currentWeek, true);
+
       await sendViaBrevo(
         regionalEmails,
-        `[Feedback & Analysis] Regional Grand Total RMNCH Report - ${currentWeek}`,
+        `[Weekly Summary Feedback] Regional Grand Total RMNCH Report - ${currentWeek}`,
         regionalBody
       );
     }
