@@ -141,10 +141,9 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
         if (baseName.startsWith('1.')) catKey = 'cat1_srh';
         else if (baseName.startsWith('2.')) catKey = 'cat2_maternal';
         else if (baseName.startsWith('3.')) catKey = 'cat3_epi';
-        else if (baseName.startsWith('4.')) categorizedIndicatorsKey = 'cat4_child';
+        else if (baseName.startsWith('4.')) catKey = 'cat4_child';
         else if (baseName.startsWith('5.')) catKey = 'cat5_nutrition';
 
-        if (baseName.startsWith('4.')) catKey = 'cat4_child';
         if (catKey) {
           indicatorPairs.push({ catKey, baseName, performedKey, eligibleKey: header });
         }
@@ -224,7 +223,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     indicatorInconsistencies: []
   };
 
-  // Identify key indicator headers for logical consistency checks
   const findCol = (patterns) => headers.find(h =>
     !h.includes('Eligible') && !h.includes('Target') &&
     patterns.some(p => h.toLowerCase().includes(p))
@@ -236,7 +234,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
   const anc4Col = findCol(['anc 4', 'anc-4', 'anc4']);
   const anc8Col = findCol(['anc 8', 'anc-8', 'anc8']);
 
-  // Group historical records by Woreda for trend/outlier/repetition checks
   const historyByWoreda = {};
   zoneAllData.forEach(r => {
     const key = `${r.Zone}__${r.Woreda}`;
@@ -249,7 +246,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     const key = `${row.Zone}__${row.Woreda}`;
     const woredaHistory = historyByWoreda[key] || [];
 
-    // 1. Missing Data Check (blank cells in reported rows)
     const missingCols = [];
     indicatorPairs.forEach(({ performedKey }) => {
       const val = row[performedKey];
@@ -261,7 +257,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       qualityAudit.missingData.push(`${woredaLabel}: Missing values for ${missingCols.slice(0, 5).join(', ')}${missingCols.length > 5 ? ` (+${missingCols.length - 5} more)` : ''}`);
     }
 
-    // 2. Logical Consistency Checks (Penta 1 vs Penta 3; ANC 1 vs ANC 4 vs ANC 8)
     const p1 = penta1Col ? parseFloat(row[penta1Col]) : NaN;
     const p3 = penta3Col ? parseFloat(row[penta3Col]) : NaN;
     if (!isNaN(p1) && !isNaN(p3) && p3 > p1) {
@@ -280,7 +275,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 1 (${a1})`);
     }
 
-    // 3. Historical Outlier & Repeated Value Checks
     const priorWeeks = woredaHistory.filter(h =>
       h.Report && h.Report.toLowerCase() === 'reported' && h.Week !== row.Week
     );
@@ -295,13 +289,11 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
           .filter(v => !isNaN(v));
 
         if (prevVals.length >= 2) {
-          // Repeated identical non-zero values across weeks
           const recentTwo = prevVals.slice(-2);
           if (currVal > 0 && recentTwo.every(v => v === currVal)) {
             qualityAudit.repeatedValues.push(`${woredaLabel}: Reported exact same figure (${currVal}) for [${performedKey}] across 3+ weeks`);
           }
 
-          // Statistical Outlier (>50% deviation from historical mean, minimum threshold >= 10)
           const mean = prevVals.reduce((acc, v) => acc + v, 0) / prevVals.length;
           if (mean >= 10 && Math.abs(currVal - mean) / mean > 0.5) {
             const direction = currVal > mean ? 'spike' : 'drop';
@@ -312,7 +304,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  // Mortality Alerts (Maternal/Neonatal Only)
   const mortalityAlerts = [];
   filteredData.forEach(row => {
     const woredaName = isGrandTotal ? `${row.Woreda} (${row.Zone})` : (row.Woreda || 'Unknown Woreda');
@@ -434,7 +425,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Generate a DOCX, store it temporarily, and return a public HTTPS download URL.
 app.post('/api/export-docx', async (req, res) => {
   try {
     const { reportText, title } = req.body;
@@ -602,9 +592,8 @@ async function runRmnchEmailDispatch(forcedDay = null) {
           `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
           `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
           'Note: Summary analytical feedback will be dispatched on Wednesday.' +
-          `\n\n---\nThis report is prepared by SWERHB MCH Team. Note: This is a preliminary report; for more information, please visit the RMNCH Dashboard.`;
+          REPORT_FOOTER;
       } else {
-        // WEDNESDAY: Short, informative <1-page executive summary
         const analytics = buildAnalyticsPayload(rawData, zone, currentWeek);
         zonalBody = await generateAiReport(zone, analytics, currentWeek, true);
       }
@@ -617,7 +606,6 @@ async function runRmnchEmailDispatch(forcedDay = null) {
     }
 
     if (dayOfWeek === 3) {
-      // WEDNESDAY REGIONAL GRAND TOTAL: Short, informative <1-page executive summary
       const regionalAnalytics = buildAnalyticsPayload(rawData, 'Grand Total', currentWeek);
       const regionalBody = await generateAiReport('Grand Total', regionalAnalytics, currentWeek, true);
 
