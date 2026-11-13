@@ -157,7 +157,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  // Calculate Indicator Summaries per Category
+  // Calculate Indicator Summaries per Category (using full performedKey indicator name)
   const categorizedSummaryText = [];
   const categoryLabels = {
     cat1_srh: 'Category 1: SRH Services',
@@ -174,7 +174,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     const catIndicators = [];
     const woredaScores = [];
 
-    pairs.forEach(({ baseName, performedKey, eligibleKey }) => {
+    pairs.forEach(({ performedKey, eligibleKey }) => {
       let totalPerf = 0;
       let totalElig = 0;
       filteredData.forEach(row => {
@@ -182,7 +182,8 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
         totalElig += parseFloat(row[eligibleKey]) || 0;
       });
       const cov = totalElig > 0 ? ((totalPerf / totalElig) * 100).toFixed(1) : '0.0';
-      catIndicators.push(`- ${baseName}: Performed=${totalPerf}, Eligible=${totalElig}, Coverage=${cov}%`);
+      // Uses performedKey so the full indicator title is preserved
+      catIndicators.push(`- ${performedKey}: Performed=${totalPerf}, Eligible=${totalElig}, Coverage=${cov}%`);
     });
 
     reportingWoredas.forEach(row => {
@@ -351,7 +352,7 @@ async function generateAiReport(analytics, isEmailSummary = false) {
 - Reporting Rate: ${reportingRate}
 - Non-Reporting Woredas: ${nonReportingWoredas}
 - Multi-Week Trends: ${weeklyTrendSummary}
-- Indicator Coverage Data:
+- Indicator Coverage Data (Include full indicator names):
 ${categorizedSummaryText}
 - Category Rankings (Best & Poor 3 Woredas):
 ${categoryRankingsText}
@@ -362,10 +363,10 @@ ${mortalityText}
   `.trim();
 
   const formatInstruction = isEmailSummary
-    ? `CRITICAL FORMAT: Write a short, executive summary email (under 250 words) using clean bullet points based on the pre-calculated data above. Include Reporting Overview, Service Coverage highlights, Top/Poor 3 woredas, Quality/Consistency alerts, and Death Notifications.`
-    : `CRITICAL FORMAT: Write the complete comprehensive 9-section report using the pre-calculated data above. Include professional tables for each category and detailed narrative sections for Quality Audits and Death Notifications.`;
+    ? `CRITICAL FORMAT: Write a short, executive summary email (under 250 words) using clean bullet points based on the pre-calculated data above. Include Reporting Overview, Service Coverage highlights (using full indicator names), Top/Poor 3 woredas, Quality/Consistency alerts, and Death Notifications.`
+    : `CRITICAL FORMAT: Write the complete comprehensive 9-section report using the pre-calculated data above. Include professional tables for each category using the full indicator names provided, plus detailed narrative sections for Quality Audits and Death Notifications.`;
 
-  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Your job is strictly linguistic narration and formatting—all calculations have already been performed in code. 
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Your job is strictly linguistic narration and formatting—all calculations have already been performed in code. Always retain the full descriptive indicator names (do not shorten them to just numbers).
 Start your response with exactly:
 "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
 
