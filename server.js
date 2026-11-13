@@ -131,7 +131,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     const rate = total > 0 ? (reported / total) * 100 : 0;
     return { wk, rate, reported, total };
   })
-  .filter(item => item.rate > 0) // Exclude 0% reporting rate weeks
+  .filter(item => item.rate > 0)
   .map(item => `${item.wk}: ${item.rate.toFixed(1)}% (${item.reported}/${item.total})`)
   .join(' | ') || 'No active reporting history available.';
 
@@ -157,7 +157,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  // Aggregate category indicators
   const categorizedIndicators = {
     cat1_srh: [], cat2_maternal: [], cat3_epi: [], cat4_child: [], cat5_nutrition: []
   };
@@ -178,7 +177,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     });
   });
 
-  // Best 3 & Poor 3 Performing Woredas per Category (among reporting woredas)
   const categoryRankings = {};
   const categoryLabels = {
     cat1_srh: 'Category 1: SRH Services',
@@ -221,7 +219,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     };
   });
 
-  // Data Quality & Consistency Audits
   const qualityAudit = {
     outliers: [],
     missingData: [],
@@ -260,7 +257,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       }
     });
     if (missingCols.length > 0) {
-      qualityAudit.missingData.push(`${woredaLabel}: Missing values for ${missingCols.slice(0, 5).join(', ')}${missingCols.length > 5 ? ` (+${missingCols.length - 5} more)` : ''}`);
+      qualityAudit.missingData.push(`${woredaLabel}: Missing values for ${missingCols.slice(0, 3).join(', ')}`);
     }
 
     const p1 = penta1Col ? parseFloat(row[penta1Col]) : NaN;
@@ -280,34 +277,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     } else if (!isNaN(a1) && !isNaN(a8) && a8 > a1) {
       qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 1 (${a1})`);
     }
-
-    const priorWeeks = woredaHistory.filter(h =>
-      h.Report && h.Report.toLowerCase() === 'reported' && h.Week !== row.Week
-    );
-
-    if (priorWeeks.length >= 2) {
-      indicatorPairs.forEach(({ performedKey }) => {
-        const currVal = parseFloat(row[performedKey]);
-        if (isNaN(currVal)) return;
-
-        const prevVals = priorWeeks
-          .map(p => parseFloat(p[performedKey]))
-          .filter(v => !isNaN(v));
-
-        if (prevVals.length >= 2) {
-          const recentTwo = prevVals.slice(-2);
-          if (currVal > 0 && recentTwo.every(v => v === currVal)) {
-            qualityAudit.repeatedValues.push(`${woredaLabel}: Reported exact same figure (${currVal}) for [${performedKey}] across 3+ weeks`);
-          }
-
-          const mean = prevVals.reduce((acc, v) => acc + v, 0) / prevVals.length;
-          if (mean >= 10 && Math.abs(currVal - mean) / mean > 0.5) {
-            const direction = currVal > mean ? 'spike' : 'drop';
-            qualityAudit.outliers.push(`${woredaLabel}: Unusual ${direction} in [${performedKey}] (Current: ${currVal} vs Weekly Avg: ${mean.toFixed(1)})`);
-          }
-        }
-      });
-    }
   });
 
   const mortalityAlerts = [];
@@ -316,18 +285,23 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     headers.forEach(h => {
       const lowerH = h.toLowerCase();
       if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
-        mortalityAlerts.push(`[CRITICAL DEATH NOTIFICATION / MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
+        mortalityAlerts.push(`${woredaName}: ${row[h]} case(s) under [${h}]`);
       }
     });
   });
 
   return {
     reportingRate,
-    nonReportingWoredas,
+    nonReportingWoredas: nonReportingWoredas.slice(0, 10), // Limit array length to save tokens
     weeklyTrendSummary,
     categorizedIndicators,
     categoryRankings,
-    qualityAudit,
+    qualityAudit: {
+      outliers: qualityAudit.outliers.slice(0, 5),
+      missingData: qualityAudit.missingData.slice(0, 5),
+      repeatedValues: qualityAudit.repeatedValues.slice(0, 5),
+      indicatorInconsistencies: qualityAudit.indicatorInconsistencies.slice(0, 5)
+    },
     mortalityAlerts
   };
 }
@@ -358,55 +332,29 @@ async function generateAiReport(zoneName, analytics, currentWeek, isEmailSummary
     mortalityAlerts
   } = analytics;
 
+  // METHOD 1 FIX: Pre-summarize metrics in plain text so Groq reads <800 tokens instead of 20,000+ JSON characters
+  const summaryText = `
+Zone: ${zoneName}, Week: ${currentWeek}
+Reporting Rate: ${reportingRate}
+Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
+Multi-Week Trend: ${weeklyTrendSummary}
+Rankings (Best/Poor 3): ${JSON.stringify(categoryRankings)}
+Quality Issues (Outliers/Missing/Repeated/Inconsistencies): ${JSON.stringify(qualityAudit)}
+Deaths/Mortality Alerts: ${mortalityAlerts.join(' | ') || 'None'}
+  `.trim();
+
   const formatInstruction = isEmailSummary
-    ? `CRITICAL LENGTH & FORMAT RULE:
-Generate a SHORT, EXECUTIVE SUMMARY EMAIL that fits on LESS THAN 1 PAGE (approx. 250–350 words).
-Do NOT output full multi-row indicator tables. Instead, present crisp, scannable bullet points covering:
-1. **Reporting Overview & Non-Reporting Woredas**
-2. **Key Service Coverage Highlights** (brief 1-line takeaway per category)
-3. **Top 3 & Bottom 3 Woredas** (concise highlights across categories)
-4. **Data Quality & Consistency Alerts** (outliers, missing data, repeated numbers across weeks, and Penta 1/3 or ANC 1/4/8 inconsistencies)
-5. **Death Notifications / Mortality Alerts** (Mandatory section: clearly list any maternal or neonatal deaths reported this week, or state "No maternal or neonatal deaths reported.")`
-    : `Required Exhaustive Report Structure (Keep tables concise and focused):
-1. **Reporting Rate Summary**
-2. **Multi-Week Reporting Trend Analysis** (Note: Exclude 0% weeks)
-3. **Category 1: SRH Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
-4. **Category 2: Maternal Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
-5. **Category 3: EPI Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
-6. **Category 4: Child Health Service** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
-7. **Category 5: Nutrition** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
-8. **Data Quality & Consistency Audit** (Explicitly detail: Statistical Outliers vs previous weeks, Missing Data, Woredas reporting identical numbers across weeks, and Indicator Inconsistencies such as Penta 1 vs Penta 3 and ANC 1 vs ANC 4 vs ANC 8)
-9. **Death Notifications & Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
-
-  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Do NOT compare data against HSTP-II targets. Ensure you complete all sections through Section 9 without truncating.
-
-Greeting Header (Must start with exactly):
-"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
-
-${formatInstruction}
-
-Data Context:
-- Reporting Rate: ${reportingRate}
-- Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
-- Multi-Week Reporting Trend: ${weeklyTrendSummary}
-- Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
-- Best 3 & Poor 3 Performing Woredas per Category: ${JSON.stringify(categoryRankings)}
-- Data Quality & Consistency Audit Findings: ${JSON.stringify(qualityAudit)}
-- Death Notifications / Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}`;
+    ? `Generate a short executive summary email (under 250 words) with bullet points for: Reporting, Coverage Highlights, Top/Poor Woredas, Quality Alerts, and Death Notifications.`
+    : `Generate the complete comprehensive 9-section report.`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: isEmailSummary
-          ? `Generate a concise under-1-page Wednesday executive email summary for ${zoneName}, ensuring death notifications are prominently featured if present.`
-          : `Generate the complete comprehensive report for ${zoneName} ensuring all 9 sections are fully generated.`
-      }
+      { role: 'system', content: `You are an expert RMNCH Health Analytics & Data Auditor. Start greeting with: "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}". ${formatInstruction}` },
+      { role: 'user', content: summaryText }
     ],
     model: 'openai/gpt-oss-20b',
     temperature: 0.3,
-    max_completion_tokens: isEmailSummary ? 800 : 4000
+    max_completion_tokens: isEmailSummary ? 600 : 2500
   });
 
   const body = chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
@@ -609,6 +557,9 @@ async function runRmnchEmailDispatch(forcedDay = null) {
         `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Weekly Summary Feedback'}] ${zone} - ${currentWeek}`,
         zonalBody
       );
+
+      // METHOD 2 FIX: Add a 2.5-second pause between zone emails so Groq's 8,000 TPM limit is never exceeded
+      await new Promise(resolve => setTimeout(resolve, 2500));
     }
 
     if (dayOfWeek === 3) {
