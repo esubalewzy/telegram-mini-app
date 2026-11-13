@@ -116,7 +116,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
   const reportingRate = totalExpectedWoredas > 0
     ? `${((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1)}%` : '0%';
 
-  // Multi-week trend summary
+  // Multi-week trend summary (Excluding weeks with 0% reporting rate)
   const weeklyTrends = {};
   zoneAllData.forEach(r => {
     const wk = r.Week || 'Unknown Week';
@@ -124,10 +124,16 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     weeklyTrends[wk].totalExpected++;
     if (r.Report && r.Report.toLowerCase() === 'reported') weeklyTrends[wk].reportedCount++;
   });
+  
   const weeklyTrendSummary = Object.keys(weeklyTrends).map(wk => {
-    const rate = ((weeklyTrends[wk].reportedCount / weeklyTrends[wk].totalExpected) * 100).toFixed(1);
-    return `${wk}: ${rate}% (${weeklyTrends[wk].reportedCount}/${weeklyTrends[wk].totalExpected})`;
-  }).join(' | ');
+    const total = weeklyTrends[wk].totalExpected;
+    const reported = weeklyTrends[wk].reportedCount;
+    const rate = total > 0 ? (reported / total) * 100 : 0;
+    return { wk, rate, reported, total };
+  })
+  .filter(item => item.rate > 0) // Exclude 0% reporting rate weeks
+  .map(item => `${item.wk}: ${item.rate.toFixed(1)}% (${item.reported}/${item.total})`)
+  .join(' | ') || 'No active reporting history available.';
 
   const headers = Object.keys(rawData[0] || {});
   const indicatorPairs = [];
@@ -361,9 +367,9 @@ Do NOT output full multi-row indicator tables. Instead, present crisp, scannable
 3. **Top 3 & Bottom 3 Woredas** (concise highlights across categories)
 4. **Data Quality & Consistency Alerts** (outliers, missing data, repeated numbers across weeks, and Penta 1/3 or ANC 1/4/8 inconsistencies)
 5. **Death Notifications / Mortality Alerts** (Mandatory section: clearly list any maternal or neonatal deaths reported this week, or state "No maternal or neonatal deaths reported.")`
-    : `Required Exhaustive Report Structure (Do NOT include any HSTP-II comparison):
+    : `Required Exhaustive Report Structure (Keep tables concise and focused):
 1. **Reporting Rate Summary**
-2. **Multi-Week Reporting Trend Analysis**
+2. **Multi-Week Reporting Trend Analysis** (Note: Exclude 0% weeks)
 3. **Category 1: SRH Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
 4. **Category 2: Maternal Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
 5. **Category 3: EPI Services** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
@@ -372,7 +378,7 @@ Do NOT output full multi-row indicator tables. Instead, present crisp, scannable
 8. **Data Quality & Consistency Audit** (Explicitly detail: Statistical Outliers vs previous weeks, Missing Data, Woredas reporting identical numbers across weeks, and Indicator Inconsistencies such as Penta 1 vs Penta 3 and ANC 1 vs ANC 4 vs ANC 8)
 9. **Death Notifications & Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
 
-  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Do NOT compare data against HSTP-II targets.
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Do NOT compare data against HSTP-II targets. Ensure you complete all sections through Section 9 without truncating.
 
 Greeting Header (Must start with exactly):
 "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
@@ -395,12 +401,12 @@ Data Context:
         role: 'user',
         content: isEmailSummary
           ? `Generate a concise under-1-page Wednesday executive email summary for ${zoneName}, ensuring death notifications are prominently featured if present.`
-          : `Generate the complete individualized report for ${zoneName}.`
+          : `Generate the complete comprehensive report for ${zoneName} ensuring all 9 sections are fully generated.`
       }
     ],
     model: 'openai/gpt-oss-20b',
     temperature: 0.3,
-    max_completion_tokens: isEmailSummary ? 700 : 2000 // Optimized to stay safely within free tier 8k TPM limits
+    max_completion_tokens: isEmailSummary ? 800 : 4000
   });
 
   const body = chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
