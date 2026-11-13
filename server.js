@@ -310,7 +310,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     headers.forEach(h => {
       const lowerH = h.toLowerCase();
       if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
-        mortalityAlerts.push(`[CRITICAL MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
+        mortalityAlerts.push(`[CRITICAL DEATH NOTIFICATION / MORTALITY ALERT] ${woredaName} reported ${row[h]} case(s) under [${h}].`);
       }
     });
   });
@@ -358,9 +358,9 @@ Generate a SHORT, EXECUTIVE SUMMARY EMAIL that fits on LESS THAN 1 PAGE (approx.
 Do NOT output full multi-row indicator tables. Instead, present crisp, scannable bullet points covering:
 1. **Reporting Overview & Non-Reporting Woredas**
 2. **Key Service Coverage Highlights** (brief 1-line takeaway per category)
-3. **Top 3 & Bottom 3 Woredas** (concise highlights across the 5 categories)
+3. **Top 3 & Bottom 3 Woredas** (concise highlights across categories)
 4. **Data Quality & Consistency Alerts** (outliers, missing data, repeated numbers across weeks, and Penta 1/3 or ANC 1/4/8 inconsistencies)
-5. **Mortality Alerts** (if any)`
+5. **Death Notifications / Mortality Alerts** (Mandatory section: clearly list any maternal or neonatal deaths reported this week, or state "No maternal or neonatal deaths reported.")`
     : `Required Exhaustive Report Structure (Do NOT include any HSTP-II comparison):
 1. **Reporting Rate Summary**
 2. **Multi-Week Reporting Trend Analysis**
@@ -370,7 +370,7 @@ Do NOT output full multi-row indicator tables. Instead, present crisp, scannable
 6. **Category 4: Child Health Service** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
 7. **Category 5: Nutrition** (Markdown table: | Indicator | Performed | Eligible | Coverage % | + Best 3 & Poor 3 Woredas)
 8. **Data Quality & Consistency Audit** (Explicitly detail: Statistical Outliers vs previous weeks, Missing Data, Woredas reporting identical numbers across weeks, and Indicator Inconsistencies such as Penta 1 vs Penta 3 and ANC 1 vs ANC 4 vs ANC 8)
-9. **Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
+9. **Death Notifications & Mortality Alerts** (Strictly Maternal and Neonatal deaths only)`;
 
   const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Do NOT compare data against HSTP-II targets.
 
@@ -386,7 +386,7 @@ Data Context:
 - Categorized Indicators: ${JSON.stringify(categorizedIndicators)}
 - Best 3 & Poor 3 Performing Woredas per Category: ${JSON.stringify(categoryRankings)}
 - Data Quality & Consistency Audit Findings: ${JSON.stringify(qualityAudit)}
-- Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}`;
+- Death Notifications / Mortality Alerts (Maternal/Neonatal Only): ${mortalityAlerts.join(' | ') || 'No maternal or neonatal deaths reported.'}`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
@@ -394,13 +394,13 @@ Data Context:
       {
         role: 'user',
         content: isEmailSummary
-          ? `Generate a concise under-1-page Wednesday executive email summary for ${zoneName}.`
+          ? `Generate a concise under-1-page Wednesday executive email summary for ${zoneName}, ensuring death notifications are prominently featured if present.`
           : `Generate the complete individualized report for ${zoneName}.`
       }
     ],
     model: 'openai/gpt-oss-20b',
     temperature: 0.3,
-    max_completion_tokens: isEmailSummary ? 1100 : 3500
+    max_completion_tokens: isEmailSummary ? 700 : 2000 // Optimized to stay safely within free tier 8k TPM limits
   });
 
   const body = chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
