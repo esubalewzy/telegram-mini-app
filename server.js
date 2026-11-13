@@ -94,8 +94,8 @@ function getCurrentReportingWeek(rawData) {
 }
 
 /**
- * Shared analytical engine: computes coverage, Top/Bottom 3 woredas per category,
- * historical outliers, missing data, repeated numbers across weeks, and indicator consistency.
+ * PURE CODE CALCULATION ENGINE:
+ * Computes all metrics, aggregations, rankings, and anomaly detection entirely in JS.
  */
 function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
   const isGrandTotal = !selectedZone || selectedZone === 'Grand Total';
@@ -114,9 +114,9 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
   const nonReportingRows = filteredData.filter(r => !r.Report || r.Report.toLowerCase() !== 'reported');
   const nonReportingWoredas = nonReportingRows.map(r => isGrandTotal ? `${r.Woreda} (${r.Zone})` : r.Woreda).filter(Boolean);
   const reportingRate = totalExpectedWoredas > 0
-    ? `${((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1)}%` : '0%';
+    ? `${((reportingWoredas.length / totalExpectedWoredas) * 100).toFixed(1)}% (${reportingWoredas.length}/${totalExpectedWoredas})` : '0%';
 
-  // Multi-week trend summary (Excluding weeks with 0% reporting rate)
+  // Multi-week trend summary (Excluding 0% weeks)
   const weeklyTrends = {};
   zoneAllData.forEach(r => {
     const wk = r.Week || 'Unknown Week';
@@ -157,27 +157,8 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  const categorizedIndicators = {
-    cat1_srh: [], cat2_maternal: [], cat3_epi: [], cat4_child: [], cat5_nutrition: []
-  };
-
-  indicatorPairs.forEach(({ catKey, performedKey, eligibleKey }) => {
-    let totalPerformed = 0;
-    let totalEligible = 0;
-    filteredData.forEach(row => {
-      totalPerformed += parseFloat(row[performedKey]) || 0;
-      totalEligible += parseFloat(row[eligibleKey]) || 0;
-    });
-    const coverageNum = totalEligible > 0 ? Number(((totalPerformed / totalEligible) * 100).toFixed(1)) : 0;
-    categorizedIndicators[catKey].push({
-      name: performedKey,
-      performed: totalPerformed,
-      eligible: totalEligible,
-      coverage: `${coverageNum}%`
-    });
-  });
-
-  const categoryRankings = {};
+  // Calculate Indicator Summaries per Category
+  const categorizedSummaryText = [];
   const categoryLabels = {
     cat1_srh: 'Category 1: SRH Services',
     cat2_maternal: 'Category 2: Maternal Services',
@@ -186,9 +167,23 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     cat5_nutrition: 'Category 5: Nutrition'
   };
 
+  const categoryRankingsText = [];
+
   Object.keys(categoryLabels).forEach(catKey => {
     const pairs = indicatorPairs.filter(p => p.catKey === catKey);
+    const catIndicators = [];
     const woredaScores = [];
+
+    pairs.forEach(({ baseName, performedKey, eligibleKey }) => {
+      let totalPerf = 0;
+      let totalElig = 0;
+      filteredData.forEach(row => {
+        totalPerf += parseFloat(row[performedKey]) || 0;
+        totalElig += parseFloat(row[eligibleKey]) || 0;
+      });
+      const cov = totalElig > 0 ? ((totalPerf / totalElig) * 100).toFixed(1) : '0.0';
+      catIndicators.push(`- ${baseName}: Performed=${totalPerf}, Eligible=${totalElig}, Coverage=${cov}%`);
+    });
 
     reportingWoredas.forEach(row => {
       let sumPct = 0;
@@ -203,28 +198,23 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       });
       if (validCount > 0) {
         const label = isGrandTotal ? `${row.Woreda} (${row.Zone})` : row.Woreda;
-        woredaScores.push({
-          woreda: label,
-          avgCoverage: Number((sumPct / validCount).toFixed(1))
-        });
+        woredaScores.push({ woreda: label, avgCoverage: Number((sumPct / validCount).toFixed(1)) });
       }
     });
 
     woredaScores.sort((a, b) => b.avgCoverage - a.avgCoverage);
-    categoryRankings[categoryLabels[catKey]] = {
-      best3: woredaScores.slice(0, 3).map(w => `${w.woreda} (${w.avgCoverage}%)`),
-      poor3: woredaScores.length > 3
-        ? woredaScores.slice(-3).reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`)
-        : woredaScores.slice().reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`)
-    };
+    const best = woredaScores.slice(0, 3).map(w => `${w.woreda} (${w.avgCoverage}%)`).join(', ') || 'None';
+    const poor = woredaScores.length > 0 ? woredaScores.slice(-3).reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`).join(', ') : 'None';
+
+    categorizedSummaryText.push(`\n**${categoryLabels[catKey]}**\n${catIndicators.join('\n')}`);
+    categoryRankingsText.push(`- ${categoryLabels[catKey]} -> Best 3: [${best}] | Poor 3: [${poor}]`);
   });
 
-  const qualityAudit = {
-    outliers: [],
-    missingData: [],
-    repeatedValues: [],
-    indicatorInconsistencies: []
-  };
+  // Data Quality & Consistency Audits (Pure JS Calculations)
+  const missingDataLogs = [];
+  const outlierLogs = [];
+  const repeatedLogs = [];
+  const inconsistencyLogs = [];
 
   const findCol = (patterns) => headers.find(h =>
     !h.includes('Eligible') && !h.includes('Target') &&
@@ -249,60 +239,81 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     const key = `${row.Zone}__${row.Woreda}`;
     const woredaHistory = historyByWoreda[key] || [];
 
-    const missingCols = [];
+    // Missing Data
     indicatorPairs.forEach(({ performedKey }) => {
       const val = row[performedKey];
       if (val === undefined || val === null || val.toString().trim() === '') {
-        missingCols.push(performedKey);
+        missingDataLogs.push(`${woredaLabel} missing [${performedKey}]`);
       }
     });
-    if (missingCols.length > 0) {
-      qualityAudit.missingData.push(`${woredaLabel}: Missing values for ${missingCols.slice(0, 3).join(', ')}`);
-    }
 
+    // Indicator Inconsistencies (Penta 3 > Penta 1, ANC 4 > ANC 1, ANC 8 > ANC 4)
     const p1 = penta1Col ? parseFloat(row[penta1Col]) : NaN;
     const p3 = penta3Col ? parseFloat(row[penta3Col]) : NaN;
     if (!isNaN(p1) && !isNaN(p3) && p3 > p1) {
-      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: Penta 3 (${p3}) > Penta 1 (${p1})`);
+      inconsistencyLogs.push(`${woredaLabel}: Penta 3 (${p3}) exceeds Penta 1 (${p1})`);
     }
 
     const a1 = anc1Col ? parseFloat(row[anc1Col]) : NaN;
     const a4 = anc4Col ? parseFloat(row[anc4Col]) : NaN;
     const a8 = anc8Col ? parseFloat(row[anc8Col]) : NaN;
     if (!isNaN(a1) && !isNaN(a4) && a4 > a1) {
-      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 4 (${a4}) > ANC 1 (${a1})`);
+      inconsistencyLogs.push(`${woredaLabel}: ANC 4 (${a4}) exceeds ANC 1 (${a1})`);
     }
     if (!isNaN(a4) && !isNaN(a8) && a8 > a4) {
-      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 4 (${a4})`);
-    } else if (!isNaN(a1) && !isNaN(a8) && a8 > a1) {
-      qualityAudit.indicatorInconsistencies.push(`${woredaLabel}: ANC 8 (${a8}) > ANC 1 (${a1})`);
+      inconsistencyLogs.push(`${woredaLabel}: ANC 8 (${a8}) exceeds ANC 4 (${a4})`);
+    }
+
+    // Historical Outliers & Repeated Values
+    const priorWeeks = woredaHistory.filter(h => h.Report?.toLowerCase() === 'reported' && h.Week !== row.Week);
+    if (priorWeeks.length >= 2) {
+      indicatorPairs.forEach(({ performedKey }) => {
+        const currVal = parseFloat(row[performedKey]);
+        if (isNaN(currVal)) return;
+        const prevVals = priorWeeks.map(p => parseFloat(p[performedKey])).filter(v => !isNaN(v));
+
+        if (prevVals.length >= 2) {
+          const recentTwo = prevVals.slice(-2);
+          if (currVal > 0 && recentTwo.every(v => v === currVal)) {
+            repeatedLogs.push(`${woredaLabel}: Reported identical figure (${currVal}) for [${performedKey}] across 3+ weeks`);
+          }
+          const mean = prevVals.reduce((a, b) => a + b, 0) / prevVals.length;
+          if (mean >= 10 && Math.abs(currVal - mean) / mean > 0.5) {
+            const dir = currVal > mean ? 'spike' : 'drop';
+            outlierLogs.push(`${woredaLabel}: Unusual ${dir} in [${performedKey}] (Current: ${currVal} vs Historical Avg: ${mean.toFixed(1)})`);
+          }
+        }
+      });
     }
   });
 
-  const mortalityAlerts = [];
+  // Mortality / Death Notifications
+  const mortalityLogs = [];
   filteredData.forEach(row => {
     const woredaName = isGrandTotal ? `${row.Woreda} (${row.Zone})` : (row.Woreda || 'Unknown Woreda');
     headers.forEach(h => {
       const lowerH = h.toLowerCase();
       if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
-        mortalityAlerts.push(`${woredaName}: ${row[h]} case(s) under [${h}]`);
+        mortalityLogs.push(`${woredaName}: ${row[h]} case(s) under [${h}]`);
       }
     });
   });
 
   return {
+    zoneName: selectedZone || 'Grand Total',
+    currentWeek: selectedWeek || 'Current Week',
     reportingRate,
-    nonReportingWoredas: nonReportingWoredas.slice(0, 10), // Limit array length to save tokens
+    nonReportingWoredas: nonReportingWoredas.join(', ') || 'None',
     weeklyTrendSummary,
-    categorizedIndicators,
-    categoryRankings,
-    qualityAudit: {
-      outliers: qualityAudit.outliers.slice(0, 5),
-      missingData: qualityAudit.missingData.slice(0, 5),
-      repeatedValues: qualityAudit.repeatedValues.slice(0, 5),
-      indicatorInconsistencies: qualityAudit.indicatorInconsistencies.slice(0, 5)
-    },
-    mortalityAlerts
+    categorizedSummaryText: categorizedSummaryText.join('\n'),
+    categoryRankingsText: categoryRankingsText.join('\n'),
+    qualityAuditText: `
+- Missing Data Issues: ${missingDataLogs.slice(0, 5).join(' | ') || 'None'}
+- Statistical Outliers vs Past Weeks: ${outlierLogs.slice(0, 5).join(' | ') || 'None'}
+- Repeated Figures Across Weeks: ${repeatedLogs.slice(0, 5).join(' | ') || 'None'}
+- Indicator Logic Inconsistencies: ${inconsistencyLogs.slice(0, 5).join(' | ') || 'None'}
+    `.trim(),
+    mortalityText: mortalityLogs.join(' | ') || 'No maternal or neonatal deaths reported.'
   };
 }
 
@@ -321,39 +332,52 @@ app.get('/api/filters', async (req, res) => {
   }
 });
 
-async function generateAiReport(zoneName, analytics, currentWeek, isEmailSummary = false) {
+async function generateAiReport(analytics, isEmailSummary = false) {
   const {
+    zoneName,
+    currentWeek,
     reportingRate,
     nonReportingWoredas,
     weeklyTrendSummary,
-    categorizedIndicators,
-    categoryRankings,
-    qualityAudit,
-    mortalityAlerts
+    categorizedSummaryText,
+    categoryRankingsText,
+    qualityAuditText,
+    mortalityText
   } = analytics;
 
-  // METHOD 1 FIX: Pre-summarize metrics in plain text so Groq reads <800 tokens instead of 20,000+ JSON characters
-  const summaryText = `
-Zone: ${zoneName}, Week: ${currentWeek}
-Reporting Rate: ${reportingRate}
-Non-Reporting Woredas: ${nonReportingWoredas.join(', ') || 'None'}
-Multi-Week Trend: ${weeklyTrendSummary}
-Rankings (Best/Poor 3): ${JSON.stringify(categoryRankings)}
-Quality Issues (Outliers/Missing/Repeated/Inconsistencies): ${JSON.stringify(qualityAudit)}
-Deaths/Mortality Alerts: ${mortalityAlerts.join(' | ') || 'None'}
+  const preCalculatedBrief = `
+- Zone: ${zoneName}
+- Week: ${currentWeek}
+- Reporting Rate: ${reportingRate}
+- Non-Reporting Woredas: ${nonReportingWoredas}
+- Multi-Week Trends: ${weeklyTrendSummary}
+- Indicator Coverage Data:
+${categorizedSummaryText}
+- Category Rankings (Best & Poor 3 Woredas):
+${categoryRankingsText}
+- Data Quality & Consistency Audit Results:
+${qualityAuditText}
+- Death Notifications / Mortality Alerts:
+${mortalityText}
   `.trim();
 
   const formatInstruction = isEmailSummary
-    ? `Generate a short executive summary email (under 250 words) with bullet points for: Reporting, Coverage Highlights, Top/Poor Woredas, Quality Alerts, and Death Notifications.`
-    : `Generate the complete comprehensive 9-section report.`;
+    ? `CRITICAL FORMAT: Write a short, executive summary email (under 250 words) using clean bullet points based on the pre-calculated data above. Include Reporting Overview, Service Coverage highlights, Top/Poor 3 woredas, Quality/Consistency alerts, and Death Notifications.`
+    : `CRITICAL FORMAT: Write the complete comprehensive 9-section report using the pre-calculated data above. Include professional tables for each category and detailed narrative sections for Quality Audits and Death Notifications.`;
+
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Your job is strictly linguistic narration and formatting—all calculations have already been performed in code. 
+Start your response with exactly:
+"Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
+
+${formatInstruction}`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: `You are an expert RMNCH Health Analytics & Data Auditor. Start greeting with: "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}". ${formatInstruction}` },
-      { role: 'user', content: summaryText }
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: preCalculatedBrief }
     ],
     model: 'openai/gpt-oss-20b',
-    temperature: 0.3,
+    temperature: 0.2,
     max_completion_tokens: isEmailSummary ? 600 : 2500
   });
 
@@ -367,11 +391,8 @@ app.post('/api/chat', async (req, res) => {
     const rawData = await fetchFinalSheetData();
     if (!rawData.length) return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
 
-    const zoneLabel = selectedZone || 'Grand Total';
-    const weekLabel = selectedWeek || 'Current Week';
-    const analytics = buildAnalyticsPayload(rawData, zoneLabel, weekLabel);
-
-    const responseText = await generateAiReport(zoneLabel, analytics, weekLabel, false);
+    const analytics = buildAnalyticsPayload(rawData, selectedZone || 'Grand Total', selectedWeek || 'Current Week');
+    const responseText = await generateAiReport(analytics, false);
     res.json({ reply: responseText });
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
@@ -549,7 +570,7 @@ async function runRmnchEmailDispatch(forcedDay = null) {
           REPORT_FOOTER;
       } else {
         const analytics = buildAnalyticsPayload(rawData, zone, currentWeek);
-        zonalBody = await generateAiReport(zone, analytics, currentWeek, true);
+        zonalBody = await generateAiReport(analytics, true);
       }
 
       await sendViaBrevo(
@@ -558,13 +579,13 @@ async function runRmnchEmailDispatch(forcedDay = null) {
         zonalBody
       );
 
-      // METHOD 2 FIX: Add a 2.5-second pause between zone emails so Groq's 8,000 TPM limit is never exceeded
+      // Throttling pause between zone emails to ensure absolute stability
       await new Promise(resolve => setTimeout(resolve, 2500));
     }
 
     if (dayOfWeek === 3) {
       const regionalAnalytics = buildAnalyticsPayload(rawData, 'Grand Total', currentWeek);
-      const regionalBody = await generateAiReport('Grand Total', regionalAnalytics, currentWeek, true);
+      const regionalBody = await generateAiReport(regionalAnalytics, true);
 
       await sendViaBrevo(
         regionalEmails,
