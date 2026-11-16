@@ -20,7 +20,6 @@ const PORT = process.env.PORT || 3000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 
-// Temporary in-memory storage for generated Word documents (15-min expiry)
 const temporaryDocuments = new Map();
 const DOWNLOAD_EXPIRY = 15 * 60 * 1000;
 
@@ -95,7 +94,7 @@ function getCurrentReportingWeek(rawData) {
 
 /**
  * PURE CODE CALCULATION ENGINE:
- * Computes all metrics, aggregations, rankings, and anomaly detection entirely in JS.
+ * Computes metrics, regional averages, comparative woreda rankings, and data quality audits.
  */
 function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
   const isGrandTotal = !selectedZone || selectedZone === 'Grand Total';
@@ -157,7 +156,17 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  // Calculate Indicator Summaries per Category (using full performedKey indicator name)
+  const indicatorAverages = {};
+  indicatorPairs.forEach(({ performedKey, eligibleKey }) => {
+    let sumPerf = 0;
+    let sumElig = 0;
+    filteredData.forEach(row => {
+      sumPerf += parseFloat(row[performedKey]) || 0;
+      sumElig += parseFloat(row[eligibleKey]) || 0;
+    });
+    indicatorAverages[performedKey] = sumElig > 0 ? (sumPerf / sumElig) * 100 : 0;
+  });
+
   const categorizedSummaryText = [];
   const categoryLabels = {
     cat1_srh: 'Category 1: SRH Services',
@@ -182,36 +191,37 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
         totalElig += parseFloat(row[eligibleKey]) || 0;
       });
       const cov = totalElig > 0 ? ((totalPerf / totalElig) * 100).toFixed(1) : '0.0';
-      // Uses performedKey so the full indicator title is preserved
-      catIndicators.push(`- ${performedKey}: Performed=${totalPerf}, Eligible=${totalElig}, Coverage=${cov}%`);
+      const avgBenchmark = indicatorAverages[performedKey] ? indicatorAverages[performedKey].toFixed(1) : '0.0';
+      catIndicators.push(`- ${performedKey}: Performed=${totalPerf}, Eligible=${totalElig}, Coverage=${cov}% (Benchmark Avg: ${avgBenchmark}%)`);
     });
 
     reportingWoredas.forEach(row => {
-      let sumPct = 0;
+      let varianceSum = 0;
       let validCount = 0;
       pairs.forEach(({ performedKey, eligibleKey }) => {
         const elig = parseFloat(row[eligibleKey]);
         const perf = parseFloat(row[performedKey]);
+        const regionalAvg = indicatorAverages[performedKey] || 0;
         if (!isNaN(elig) && elig > 0 && !isNaN(perf)) {
-          sumPct += (perf / elig) * 100;
+          const woredaPct = (perf / elig) * 100;
+          varianceSum += (woredaPct - regionalAvg);
           validCount++;
         }
       });
       if (validCount > 0) {
         const label = isGrandTotal ? `${row.Woreda} (${row.Zone})` : row.Woreda;
-        woredaScores.push({ woreda: label, avgCoverage: Number((sumPct / validCount).toFixed(1)) });
+        woredaScores.push({ woreda: label, score: Number((varianceSum / validCount).toFixed(1)) });
       }
     });
 
-    woredaScores.sort((a, b) => b.avgCoverage - a.avgCoverage);
-    const best = woredaScores.slice(0, 3).map(w => `${w.woreda} (${w.avgCoverage}%)`).join(', ') || 'None';
-    const poor = woredaScores.length > 0 ? woredaScores.slice(-3).reverse().map(w => `${w.woreda} (${w.avgCoverage}%)`).join(', ') : 'None';
+    woredaScores.sort((a, b) => b.score - a.score);
+    const best = woredaScores.slice(0, 3).map(w => `${w.woreda} (${w.score > 0 ? '+' : ''}${w.score}% vs benchmark)`).join(', ') || 'None';
+    const poor = woredaScores.length > 0 ? woredaScores.slice(-3).reverse().map(w => `${w.woreda} (${w.score}% vs benchmark)`).join(', ') : 'None';
 
     categorizedSummaryText.push(`\n**${categoryLabels[catKey]}**\n${catIndicators.join('\n')}`);
-    categoryRankingsText.push(`- ${categoryLabels[catKey]} -> Best 3: [${best}] | Poor 3: [${poor}]`);
+    categoryRankingsText.push(`- ${categoryLabels[catKey]} -> Best 3 Relative to Average: [${best}] | Poor 3 Relative to Average: [${poor}]`);
   });
 
-  // Data Quality & Consistency Audits (Pure JS Calculations)
   const missingDataLogs = [];
   const outlierLogs = [];
   const repeatedLogs = [];
@@ -240,7 +250,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     const key = `${row.Zone}__${row.Woreda}`;
     const woredaHistory = historyByWoreda[key] || [];
 
-    // Missing Data
     indicatorPairs.forEach(({ performedKey }) => {
       const val = row[performedKey];
       if (val === undefined || val === null || val.toString().trim() === '') {
@@ -248,7 +257,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       }
     });
 
-    // Indicator Inconsistencies (Penta 3 > Penta 1, ANC 4 > ANC 1, ANC 8 > ANC 4)
     const p1 = penta1Col ? parseFloat(row[penta1Col]) : NaN;
     const p3 = penta3Col ? parseFloat(row[penta3Col]) : NaN;
     if (!isNaN(p1) && !isNaN(p3) && p3 > p1) {
@@ -265,7 +273,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
       inconsistencyLogs.push(`${woredaLabel}: ANC 8 (${a8}) exceeds ANC 4 (${a4})`);
     }
 
-    // Historical Outliers & Repeated Values
     const priorWeeks = woredaHistory.filter(h => h.Report?.toLowerCase() === 'reported' && h.Week !== row.Week);
     if (priorWeeks.length >= 2) {
       indicatorPairs.forEach(({ performedKey }) => {
@@ -288,18 +295,6 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
     }
   });
 
-  // Mortality / Death Notifications
-  const mortalityLogs = [];
-  filteredData.forEach(row => {
-    const woredaName = isGrandTotal ? `${row.Woreda} (${row.Zone})` : (row.Woreda || 'Unknown Woreda');
-    headers.forEach(h => {
-      const lowerH = h.toLowerCase();
-      if ((lowerH.includes('maternal death') || lowerH.includes('neonatal death') || h.includes('2.8') || h.includes('4.4')) && parseFloat(row[h]) > 0) {
-        mortalityLogs.push(`${woredaName}: ${row[h]} case(s) under [${h}]`);
-      }
-    });
-  });
-
   return {
     zoneName: selectedZone || 'Grand Total',
     currentWeek: selectedWeek || 'Current Week',
@@ -313,8 +308,7 @@ function buildAnalyticsPayload(rawData, selectedZone, selectedWeek) {
 - Statistical Outliers vs Past Weeks: ${outlierLogs.slice(0, 5).join(' | ') || 'None'}
 - Repeated Figures Across Weeks: ${repeatedLogs.slice(0, 5).join(' | ') || 'None'}
 - Indicator Logic Inconsistencies: ${inconsistencyLogs.slice(0, 5).join(' | ') || 'None'}
-    `.trim(),
-    mortalityText: mortalityLogs.join(' | ') || 'No maternal or neonatal deaths reported.'
+    `.trim()
   };
 }
 
@@ -333,7 +327,7 @@ app.get('/api/filters', async (req, res) => {
   }
 });
 
-async function generateAiReport(analytics, isEmailSummary = false) {
+async function generateAiReport(analytics) {
   const {
     zoneName,
     currentWeek,
@@ -342,8 +336,7 @@ async function generateAiReport(analytics, isEmailSummary = false) {
     weeklyTrendSummary,
     categorizedSummaryText,
     categoryRankingsText,
-    qualityAuditText,
-    mortalityText
+    qualityAuditText
   } = analytics;
 
   const preCalculatedBrief = `
@@ -352,21 +345,21 @@ async function generateAiReport(analytics, isEmailSummary = false) {
 - Reporting Rate: ${reportingRate}
 - Non-Reporting Woredas: ${nonReportingWoredas}
 - Multi-Week Trends: ${weeklyTrendSummary}
-- Indicator Coverage Data (Include full indicator names):
+- Indicator Coverage & Benchmark Averages:
 ${categorizedSummaryText}
-- Category Rankings (Best & Poor 3 Woredas):
+- Category Rankings (Best & Poor 3 Relative to Indicator Benchmarks):
 ${categoryRankingsText}
 - Data Quality & Consistency Audit Results:
 ${qualityAuditText}
-- Death Notifications / Mortality Alerts:
-${mortalityText}
   `.trim();
 
-  const formatInstruction = isEmailSummary
-    ? `CRITICAL FORMAT: Write a short, executive summary email (under 250 words) using clean bullet points based on the pre-calculated data above. Include Reporting Overview, Service Coverage highlights (using full indicator names), Top/Poor 3 woredas, Quality/Consistency alerts, and Death Notifications.`
-    : `CRITICAL FORMAT: Write the complete comprehensive 9-section report using the pre-calculated data above. Include professional tables for each category using the full indicator names provided, plus detailed narrative sections for Quality Audits and Death Notifications.`;
+  const formatInstruction = `CRITICAL FORMAT: Write the complete executive summary report maintaining this strict standardized 4-part structure:
+1. **Executive Summary & Reporting Overview**
+2. **Category-by-Category Indicator Analysis** (Include summary with full indicator names and benchmark comparisons)
+3. **Data Quality & Consistency Assessment**
+4. **Best & Poor Performing Woredas Categorization** (Ranked based on performance relative to specific regional indicator averages)`;
 
-  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. Your job is strictly linguistic narration and formatting—all calculations have already been performed in code. Always retain the full descriptive indicator names (do not shorten them to just numbers).
+  const systemPrompt = `You are an expert RMNCH Health Analytics & Data Auditor. All calculations, rankings, and benchmark comparisons have already been performed in code.
 Start your response with exactly:
 "Hello, This Is Weekly Essential RMNCH Service Report Feedback for ${zoneName}, ${currentWeek}"
 
@@ -379,7 +372,7 @@ ${formatInstruction}`;
     ],
     model: 'openai/gpt-oss-20b',
     temperature: 0.2,
-    max_completion_tokens: isEmailSummary ? 600 : 2500
+    max_completion_tokens: 2500
   });
 
   const body = chatCompletion.choices[0]?.message?.content || 'No analysis generated.';
@@ -393,7 +386,7 @@ app.post('/api/chat', async (req, res) => {
     if (!rawData.length) return res.status(500).json({ reply: 'Could not retrieve data from Google Sheet.' });
 
     const analytics = buildAnalyticsPayload(rawData, selectedZone || 'Grand Total', selectedWeek || 'Current Week');
-    const responseText = await generateAiReport(analytics, false);
+    const responseText = await generateAiReport(analytics);
     res.json({ reply: responseText });
   } catch (error) {
     console.error('Groq/Sheet Error Details:', error);
@@ -545,6 +538,7 @@ async function runRmnchEmailDispatch(forcedDay = null) {
     };
     const regionalEmails = ['esubalewzerihun11@gmail.com', 'messiwode46@gmail.com'];
 
+    // 1. ZONAL DISPATCHES
     for (const zone of zones) {
       const cleanZoneKey = zone.toString().trim().toLowerCase();
       const recipientEmail = zonalEmails[cleanZoneKey];
@@ -563,37 +557,64 @@ async function runRmnchEmailDispatch(forcedDay = null) {
         .map(r => r.Woreda).join(', ') || 'None';
 
       let zonalBody = '';
-      if (dayOfWeek === 1 || dayOfWeek === 2) {
-        zonalBody = `Hello,\n\nThis is your Weekly Essential RMNCH Service Status Update for ${zone} (${currentWeek}).\n\n` +
-          `📊 Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
-          `⚠️ Non-Reporting Woredas: ${nonReporting}\n\n` +
-          'Note: Summary analytical feedback will be dispatched on Wednesday.' +
+      let subjectLine = '';
+
+      if (dayOfWeek === 1) {
+        // MONDAY ZONAL EMAIL
+        subjectLine = `[Weekly Status Update] ${zone} - ${currentWeek}`;
+        zonalBody = `Dear ${zone} MCH Team,\n\n` +
+          `Greetings!\n\n` +
+          `Please be reminded that the weekly RMNCH service report is expected from today until Wednesday at 6:30.\n\n` +
+          `📊 Current Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
+          `⚠️ Current Non-Reporting Woredas: ${nonReporting}\n\n` +
+          `Kindly submit your reports before the deadline.` +
           REPORT_FOOTER;
-      } else {
+      } else if (dayOfWeek === 2) {
+        // TUESDAY ZONAL EMAIL
+        subjectLine = `[Weekly Status Update - Reminder] ${zone} - ${currentWeek}`;
+        zonalBody = `Dear ${zone} MCH Team,\n\n` +
+          `Greetings!\n\n` +
+          `This is your daily update regarding the weekly RMNCH service reporting for ${currentWeek} (Deadline: Wednesday 6:30).\n\n` +
+          `📊 Current Reporting Rate: ${reportingRateStr} (${reported.length}/${totalExpected} Woredas reported)\n` +
+          `⚠️ Remaining Non-Reporting Woredas: ${nonReporting}\n\n` +
+          `Please ensure timely submission.` +
+          REPORT_FOOTER;
+      } else if (dayOfWeek === 3) {
+        // WEDNESDAY ZONAL EMAIL (Greeting, non-reporting woredas, and executive summary)
+        subjectLine = `[Weekly Summary Feedback & Analysis] ${zone} - ${currentWeek}`;
         const analytics = buildAnalyticsPayload(rawData, zone, currentWeek);
-        zonalBody = await generateAiReport(analytics, true);
+        const aiSummary = await generateAiReport(analytics);
+        
+        zonalBody = `Dear ${zone} MCH Team,\n\n` +
+          `Greetings!\n\n` +
+          `The reporting window for ${currentWeek} has closed. Below is the list of woredas that failed to submit reports, followed by your zone's executive summary feedback:\n\n` +
+          `❌ Non-Reporting Woredas: ${nonReporting}\n\n` +
+          `---------------------------------------------------\n\n` +
+          aiSummary;
       }
 
-      await sendViaBrevo(
-        recipientEmail,
-        `[${dayOfWeek === 1 || dayOfWeek === 2 ? 'Status Update' : 'Weekly Summary Feedback'}] ${zone} - ${currentWeek}`,
-        zonalBody
-      );
-
-      // Throttling pause between zone emails to ensure absolute stability
+      await sendViaBrevo(recipientEmail, subjectLine, zonalBody);
       await new Promise(resolve => setTimeout(resolve, 2500));
     }
 
+    // 2. REGIONAL LEADERSHIP DISPATCH (Wednesday Only)
     if (dayOfWeek === 3) {
       const regionalAnalytics = buildAnalyticsPayload(rawData, 'Grand Total', currentWeek);
-      const regionalBody = await generateAiReport(regionalAnalytics, true);
+      const regionalAiSummary = await generateAiReport(regionalAnalytics);
+
+      const regionalBody = `Dear Regional Leadership Team,\n\n` +
+        `Formal Greetings,\n\n` +
+        `Please find below the Grand Total regional executive summary and performance feedback for ${currentWeek}:\n\n` +
+        `---------------------------------------------------\n\n` +
+        regionalAiSummary;
 
       await sendViaBrevo(
         regionalEmails,
-        `[Weekly Summary Feedback] Regional Grand Total RMNCH Report - ${currentWeek}`,
+        `[Regional Grand Total Summary] RMNCH Report - ${currentWeek}`,
         regionalBody
       );
     }
+
     return true;
   } catch (err) {
     console.error('Error in automated email dispatch via Brevo:', err);
